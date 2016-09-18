@@ -17,7 +17,8 @@ return normalizedPath;if(path[0]==="/"&&normalizedPath)
 normalizedPath="/"+normalizedPath;if((path[path.length-1]==="/")||(segments[segments.length-1]===".")||(segments[segments.length-1]===".."))
 normalizedPath=normalizedPath+"/";return normalizedPath;}
 function loadScriptsPromise(scriptNames,base)
-{var promises=[];var urls=[];var sources=new Array(scriptNames.length);var scriptToEval=0;for(var i=0;i<scriptNames.length;++i){var scriptName=scriptNames[i];var sourceURL=(base||self._importScriptPathPrefix)+scriptName;var schemaIndex=sourceURL.indexOf("://")+3;sourceURL=sourceURL.substring(0,schemaIndex)+normalizePath(sourceURL.substring(schemaIndex));if(_loadedScripts[sourceURL])
+{var promises=[];var urls=[];var sources=new Array(scriptNames.length);var scriptToEval=0;for(var i=0;i<scriptNames.length;++i){var scriptName=scriptNames[i];var sourceURL=(base||self._importScriptPathPrefix)+scriptName;var schemaIndex=sourceURL.indexOf("://")+3;var pathIndex=sourceURL.indexOf("/",schemaIndex);if(pathIndex===-1)
+pathIndex=sourceURL.length;sourceURL=sourceURL.substring(0,pathIndex)+normalizePath(sourceURL.substring(pathIndex));if(_loadedScripts[sourceURL])
 continue;urls.push(sourceURL);promises.push(loadResourcePromise(sourceURL).then(scriptSourceLoaded.bind(null,i),scriptSourceLoaded.bind(null,i,undefined)));}
 return Promise.all(promises).then(undefined);function scriptSourceLoaded(scriptNumber,scriptSource)
 {sources[scriptNumber]=scriptSource||"";while(typeof sources[scriptToEval]!=="undefined"){evaluateScript(urls[scriptToEval],sources[scriptToEval]);++scriptToEval;}}
@@ -190,7 +191,7 @@ Runtime.Experiment.prototype={isEnabled:function()
 {var queryParams=location.search;if(!queryParams)
 return;var params=queryParams.substring(1).split("&");for(var i=0;i<params.length;++i){var pair=params[i].split("=");var name=pair.shift();Runtime._queryParamsObject[name]=pair.join("=");}})();}
 Runtime.experiments=new Runtime.ExperimentsSupport();Runtime._remoteBase=Runtime.queryParam("remoteBase");{(function validateRemoteBase()
-{if(Runtime._remoteBase&&!Runtime._remoteBase.startsWith("https://chrome-devtools-frontend.appspot.com/"))
+{var remoteBaseRegexp=/^https:\/\/chrome-devtools-frontend\.appspot\.com\/serve_file\/@[0-9a-zA-Z]+\/?$/;if(Runtime._remoteBase&&!remoteBaseRegexp.test(Runtime._remoteBase))
 Runtime._remoteBase=null;})();}
 Runtime.resolveSourceURL=function(path)
 {var sourceURL=self.location.href;if(self.location.search)
@@ -248,7 +249,7 @@ String.prototype.compareTo=function(other)
 return 1;if(this<other)
 return-1;return 0;}
 String.prototype.removeURLFragment=function()
-{var fragmentIndex=this.indexOf("#");if(fragmentIndex==-1)
+{var fragmentIndex=this.indexOf("#");if(fragmentIndex===-1)
 fragmentIndex=this.length;return this.substring(0,fragmentIndex);}
 String.hashCode=function(string)
 {if(!string)
@@ -426,7 +427,7 @@ function createSearchRegex(query,caseSensitive,isRegex)
 if(!regexObject)
 regexObject=createPlainTextSearchRegex(query,regexFlags);return regexObject;}
 function createPlainTextSearchRegex(query,flags)
-{var regexSpecialCharacters=String.regexSpecialCharacters();var regex="";for(var i=0;i<query.length;++i){var c=query.charAt(i);if(regexSpecialCharacters.indexOf(c)!=-1)
+{var regexSpecialCharacters=String.regexSpecialCharacters();var regex="";for(var i=0;i<query.length;++i){var c=query.charAt(i);if(regexSpecialCharacters.indexOf(c)!==-1)
 regex+="\\";regex+=c;}
 return new RegExp(regex,flags||"");}
 function countRegexMatches(regex,content)
@@ -686,8 +687,8 @@ return-1;return 0;},compareToPosition:function(lineNumber,columnNumber)
 return-1;if(lineNumber>this.endLine||(lineNumber===this.endLine&&columnNumber>this.endColumn))
 return 1;return 0;},equal:function(other)
 {return this.startLine===other.startLine&&this.endLine===other.endLine&&this.startColumn===other.startColumn&&this.endColumn===other.endColumn;},relativeTo:function(line,column)
-{var relative=this.clone();if(this.startLine==line)
-relative.startColumn-=column;if(this.endLine==line)
+{var relative=this.clone();if(this.startLine===line)
+relative.startColumn-=column;if(this.endLine===line)
 relative.endColumn-=column;relative.startLine-=line;relative.endLine-=line;return relative;},rebaseAfterTextEdit:function(originalRange,editedRange)
 {console.assert(originalRange.startLine===editedRange.startLine);console.assert(originalRange.startColumn===editedRange.startColumn);var rebase=this.clone();if(!this.follows(originalRange))
 return rebase;var lineDelta=editedRange.endLine-originalRange.endLine;var columnDelta=editedRange.endColumn-originalRange.endColumn;rebase.startLine+=lineDelta;rebase.endLine+=lineDelta;if(rebase.startLine===editedRange.endLine)
@@ -724,7 +725,7 @@ this._innerWalk(entity,node);}}
 this._afterVisit.call(null,node);},_walkArray:function(nodeArray,parentNode)
 {for(var i=0;i<nodeArray.length;++i)
 this._innerWalk(nodeArray[i],parentNode);},}
-WebInspector.ESTreeWalker._walkOrder={"ArrayExpression":["elements"],"ArrowFunctionExpression":["params","body"],"AssignmentExpression":["left","right"],"BinaryExpression":["left","right"],"BlockStatement":["body"],"BreakStatement":["label"],"CallExpression":["callee","arguments"],"CatchClause":["param","body"],"ClassBody":["body"],"ClassDeclaration":["id","superClass","body"],"ConditionalExpression":["test","consequent","alternate"],"ContinueStatement":["label"],"DebuggerStatement":[],"DoWhileStatement":["body","test"],"EmptyStatement":[],"ExpressionStatement":["expression"],"ForInStatement":["left","right","body"],"ForOfStatement":["left","right","body"],"ForStatement":["init","test","update","body"],"FunctionDeclaration":["id","params","body"],"FunctionExpression":["id","params","body"],"Identifier":[],"IfStatement":["test","consequent","alternate"],"LabeledStatement":["label","body"],"Literal":[],"LogicalExpression":["left","right"],"MemberExpression":["object","property"],"MethodDefinition":["key","value"],"NewExpression":["callee","arguments"],"ObjectExpression":["properties"],"Program":["body"],"Property":["key","value"],"ReturnStatement":["argument"],"SequenceExpression":["expressions"],"Super":[],"SwitchCase":["test","consequent"],"SwitchStatement":["discriminant","cases"],"TaggedTemplateExpression":["tag","quasi"],"TemplateElement":[],"TemplateLiteral":["quasis","expressions"],"ThisExpression":[],"ThrowStatement":["argument"],"TryStatement":["block","handler","finalizer"],"UnaryExpression":["argument"],"UpdateExpression":["argument"],"VariableDeclaration":["declarations"],"VariableDeclarator":["id","init"],"WhileStatement":["test","body"],"WithStatement":["object","body"],"YieldExpression":["argument"]};WebInspector.createTokenizer=function(mimeType)
+WebInspector.ESTreeWalker._walkOrder={"ArrayExpression":["elements"],"ArrowFunctionExpression":["params","body"],"AssignmentExpression":["left","right"],"BinaryExpression":["left","right"],"BlockStatement":["body"],"BreakStatement":["label"],"CallExpression":["callee","arguments"],"CatchClause":["param","body"],"ClassBody":["body"],"ClassDeclaration":["id","superClass","body"],"ClassExpression":["id","superClass","body"],"ConditionalExpression":["test","consequent","alternate"],"ContinueStatement":["label"],"DebuggerStatement":[],"DoWhileStatement":["body","test"],"EmptyStatement":[],"ExpressionStatement":["expression"],"ForInStatement":["left","right","body"],"ForOfStatement":["left","right","body"],"ForStatement":["init","test","update","body"],"FunctionDeclaration":["id","params","body"],"FunctionExpression":["id","params","body"],"Identifier":[],"IfStatement":["test","consequent","alternate"],"LabeledStatement":["label","body"],"Literal":[],"LogicalExpression":["left","right"],"MemberExpression":["object","property"],"MethodDefinition":["key","value"],"NewExpression":["callee","arguments"],"ObjectExpression":["properties"],"Program":["body"],"Property":["key","value"],"ReturnStatement":["argument"],"SequenceExpression":["expressions"],"Super":[],"SwitchCase":["test","consequent"],"SwitchStatement":["discriminant","cases"],"TaggedTemplateExpression":["tag","quasi"],"TemplateElement":[],"TemplateLiteral":["quasis","expressions"],"ThisExpression":[],"ThrowStatement":["argument"],"TryStatement":["block","handler","finalizer"],"UnaryExpression":["argument"],"UpdateExpression":["argument"],"VariableDeclaration":["declarations"],"VariableDeclarator":["id","init"],"WhileStatement":["test","body"],"WithStatement":["object","body"],"YieldExpression":["argument"]};WebInspector.createTokenizer=function(mimeType)
 {var mode=CodeMirror.getMode({indentUnit:2},mimeType);var state=CodeMirror.startState(mode);function tokenize(line,callback)
 {var stream=new CodeMirror.StringStream(line);while(!stream.eol()){var style=mode.token(stream,state);var value=stream.current();if(callback(value,style,stream.start,stream.start+value.length)===WebInspector.AbortTokenization)
 return;stream.start=stream.pos;}}
@@ -990,7 +991,7 @@ return"n<";}else if(node.type==="BlockStatement"){if(node.parent&&node.parent.ty
 return"";if(node.parent&&node.parent.type==="FunctionExpression"&&node.parent.parent&&node.parent.parent.type==="Property")
 return"";if(node.parent&&node.parent.type==="FunctionExpression"&&node.parent.parent&&node.parent.parent.type==="CallExpression")
 return"";if(node.parent&&node.parent.type==="DoWhileStatement")
-return"";if(node.parent&&node.parent.type==="TryStatement"&&node.parent.block==node)
+return"";if(node.parent&&node.parent.type==="TryStatement"&&node.parent.block===node)
 return"s";if(node.parent&&node.parent.type==="CatchClause"&&node.parent.parent.finalizer)
 return"s";return"n";}else if(node.type==="WhileStatement"){if(node.body&&node.body.type!=="BlockStatement")
 return"n<";}else if(node.type==="IfStatement"){if(node.alternate){if(node.alternate.type!=="BlockStatement"&&node.alternate.type!=="IfStatement")
@@ -1138,4 +1139,4 @@ if(isNegative){if(typeof value!=="number"){hasExpression=true;return content.sub
 value=-(value);}
 return value;}}
 WebInspector.RelaxedJSONParser.Context;;applicationDescriptor={"has_html":false,"modules":[{"type":"remote","name":"gonzales"},{"type":"autostart","name":"formatter_worker"}]};if(!self.Runtime)
-self.importScripts('Runtime.js');Runtime.startWorker("formatter_worker");
+self.importScripts("Runtime.js");Runtime.startWorker("formatter_worker");

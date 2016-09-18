@@ -56,8 +56,8 @@ return Infinity;return this.startTime()+this.source().delay()+this.source().dura
 {if(!this.source().iterations()||!animation.source().iterations())
 return true;var firstAnimation=this.startTime()<animation.startTime()?this:animation;var secondAnimation=firstAnimation===this?animation:this;return firstAnimation.endTime()>=secondAnimation.startTime();},setTiming:function(duration,delay)
 {this._source.node().then(this._updateNodeStyle.bind(this,duration,delay));this._source._duration=duration;this._source._delay=delay;this.target().animationAgent().setTiming(this.id(),duration,delay);},_updateNodeStyle:function(duration,delay,node)
-{var animationPrefix;if(this.type()==WebInspector.AnimationModel.Animation.Type.CSSTransition)
-animationPrefix="transition-";else if(this.type()==WebInspector.AnimationModel.Animation.Type.CSSAnimation)
+{var animationPrefix;if(this.type()===WebInspector.AnimationModel.Animation.Type.CSSTransition)
+animationPrefix="transition-";else if(this.type()===WebInspector.AnimationModel.Animation.Type.CSSAnimation)
 animationPrefix="animation-";else
 return;var cssModel=WebInspector.CSSModel.fromTarget(node.target());if(!cssModel)
 return;cssModel.setEffectivePropertyValueForNode(node.id,animationPrefix+"duration",duration+"ms");cssModel.setEffectivePropertyValueForNode(node.id,animationPrefix+"delay",delay+"ms");},remoteObjectPromise:function()
@@ -319,7 +319,7 @@ duration+=this._movementInMs;else if(this._mouseEventType===WebInspector.Animati
 duration-=Math.max(this._movementInMs,-this._animation.source().delay());return Math.max(0,duration);},_offset:function(i)
 {var offset=this._keyframes[i].offsetAsNumber();if(this._mouseEventType===WebInspector.AnimationUI.MouseEvents.KeyframeMove&&i===this._keyframeMoved){console.assert(i>0&&i<this._keyframes.length-1,"First and last keyframe cannot be moved");offset+=this._movementInMs/this._animation.source().duration();offset=Math.max(offset,this._keyframes[i-1].offsetAsNumber());offset=Math.min(offset,this._keyframes[i+1].offsetAsNumber());}
 return offset;},_mouseDown:function(mouseEventType,keyframeIndex,event)
-{if(event.buttons==2)
+{if(event.buttons===2)
 return false;if(this._svg.enclosingNodeOrSelfWithClass("animation-node-removed"))
 return false;this._mouseEventType=mouseEventType;this._keyframeMoved=keyframeIndex;this._downMouseX=event.clientX;event.consume(true);if(this._node)
 WebInspector.Revealer.reveal(this._node);return true;},_mouseMove:function(event)

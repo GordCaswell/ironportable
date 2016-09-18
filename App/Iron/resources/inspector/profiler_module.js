@@ -63,8 +63,8 @@ WebInspector.ProfilesPanel=function()
 {WebInspector.PanelWithSidebar.call(this,"profiles");this.registerRequiredCSS("ui/panelEnablerView.css");this.registerRequiredCSS("profiler/heapProfiler.css");this.registerRequiredCSS("profiler/profilesPanel.css");this.registerRequiredCSS("components/objectValue.css");var mainContainer=new WebInspector.VBox();this.splitWidget().setMainWidget(mainContainer);this.profilesItemTreeElement=new WebInspector.ProfilesSidebarTreeElement(this);this._sidebarTree=new TreeOutline();this._sidebarTree.element.classList.add("sidebar-tree");this.panelSidebarElement().appendChild(this._sidebarTree.element);this.setDefaultFocusedElement(this._sidebarTree.element);this._sidebarTree.appendChild(this.profilesItemTreeElement);this.profileViews=createElement("div");this.profileViews.id="profile-views";this.profileViews.classList.add("vbox");mainContainer.element.appendChild(this.profileViews);this._toolbarElement=createElementWithClass("div","profiles-toolbar");mainContainer.element.insertBefore(this._toolbarElement,mainContainer.element.firstChild);this.panelSidebarElement().classList.add("profiles-sidebar-tree-box");var toolbarContainerLeft=createElementWithClass("div","profiles-toolbar");this.panelSidebarElement().insertBefore(toolbarContainerLeft,this.panelSidebarElement().firstChild);var toolbar=new WebInspector.Toolbar("",toolbarContainerLeft);this._toggleRecordAction=(WebInspector.actionRegistry.action("profiler.toggle-recording"));this._toggleRecordButton=WebInspector.Toolbar.createActionButton(this._toggleRecordAction);toolbar.appendToolbarItem(this._toggleRecordButton);this.clearResultsButton=new WebInspector.ToolbarButton(WebInspector.UIString("Clear all profiles"),"clear-toolbar-item");this.clearResultsButton.addEventListener("click",this._reset,this);toolbar.appendToolbarItem(this.clearResultsButton);this._profileTypeToolbar=new WebInspector.Toolbar("",this._toolbarElement);this._profileViewToolbar=new WebInspector.Toolbar("",this._toolbarElement);this._profileGroups={};this._launcherView=new WebInspector.MultiProfileLauncherView(this);this._launcherView.addEventListener(WebInspector.MultiProfileLauncherView.EventTypes.ProfileTypeSelected,this._onProfileTypeSelected,this);this._profileToView=[];this._typeIdToSidebarSection={};var types=WebInspector.ProfileTypeRegistry.instance.profileTypes();for(var i=0;i<types.length;i++)
 this._registerProfileType(types[i]);this._launcherView.restoreSelectedProfileType();this.profilesItemTreeElement.select();this._showLauncherView();this._createFileSelectorElement();this.element.addEventListener("contextmenu",this._handleContextMenuEvent.bind(this),true);this.contentElement.addEventListener("keydown",this._onKeyDown.bind(this),false);WebInspector.targetManager.addEventListener(WebInspector.TargetManager.Events.SuspendStateChanged,this._onSuspendStateChanged,this);}
 WebInspector.ProfilesPanel.prototype={_onKeyDown:function(event)
-{var handled=false;if(event.keyIdentifier==="Down"&&!event.altKey)
-handled=this._sidebarTree.selectNext();else if(event.keyIdentifier==="Up"&&!event.altKey)
+{var handled=false;if(event.key==="ArrowDown"&&!event.altKey)
+handled=this._sidebarTree.selectNext();else if(event.key==="ArrowUp"&&!event.altKey)
 handled=this._sidebarTree.selectPrevious();if(handled)
 event.consume(true);},searchableView:function()
 {return this.visibleView&&this.visibleView.searchableView?this.visibleView.searchableView():null;},_createFileSelectorElement:function()
@@ -342,15 +342,15 @@ profileDataGridNode._searchMatchedSelfColumn=true;if(profileDataGridNode.totalPe
 profileDataGridNode._searchMatchedTotalColumn=true;}else if(greaterThan){if(profileDataGridNode.selfPercent>queryNumber)
 profileDataGridNode._searchMatchedSelfColumn=true;if(profileDataGridNode.totalPercent>queryNumber)
 profileDataGridNode._searchMatchedTotalColumn=true;}
-if(equalTo){if(profileDataGridNode.selfPercent==queryNumber)
-profileDataGridNode._searchMatchedSelfColumn=true;if(profileDataGridNode.totalPercent==queryNumber)
+if(equalTo){if(profileDataGridNode.selfPercent===queryNumber)
+profileDataGridNode._searchMatchedSelfColumn=true;if(profileDataGridNode.totalPercent===queryNumber)
 profileDataGridNode._searchMatchedTotalColumn=true;}}else if(millisecondsUnits||secondsUnits){if(lessThan){if(profileDataGridNode.self<queryNumberMilliseconds)
 profileDataGridNode._searchMatchedSelfColumn=true;if(profileDataGridNode.total<queryNumberMilliseconds)
 profileDataGridNode._searchMatchedTotalColumn=true;}else if(greaterThan){if(profileDataGridNode.self>queryNumberMilliseconds)
 profileDataGridNode._searchMatchedSelfColumn=true;if(profileDataGridNode.total>queryNumberMilliseconds)
 profileDataGridNode._searchMatchedTotalColumn=true;}
-if(equalTo){if(profileDataGridNode.self==queryNumberMilliseconds)
-profileDataGridNode._searchMatchedSelfColumn=true;if(profileDataGridNode.total==queryNumberMilliseconds)
+if(equalTo){if(profileDataGridNode.self===queryNumberMilliseconds)
+profileDataGridNode._searchMatchedSelfColumn=true;if(profileDataGridNode.total===queryNumberMilliseconds)
 profileDataGridNode._searchMatchedTotalColumn=true;}}
 if(profileDataGridNode.functionName.match(matcher)||(profileDataGridNode.url&&profileDataGridNode.url.match(matcher)))
 profileDataGridNode._searchMatchedFunctionColumn=true;if(profileDataGridNode._searchMatchedSelfColumn||profileDataGridNode._searchMatchedTotalColumn||profileDataGridNode._searchMatchedFunctionColumn){profileDataGridNode.refresh();return true;}

@@ -1,174 +1,4 @@
-WebInspector.TracingLayerPayload;WebInspector.TracingLayerTile;WebInspector.LayerTreeModel=function(target)
-{WebInspector.SDKModel.call(this,WebInspector.LayerTreeModel,target);target.registerLayerTreeDispatcher(new WebInspector.LayerTreeDispatcher(this));WebInspector.targetManager.addEventListener(WebInspector.TargetManager.Events.MainFrameNavigated,this._onMainFrameNavigated,this);this._layerTree=null;}
-WebInspector.LayerTreeModel.Events={LayerTreeChanged:"LayerTreeChanged",LayerPainted:"LayerPainted",}
-WebInspector.LayerTreeModel.ScrollRectType={NonFastScrollable:{name:"NonFastScrollable",description:"Non fast scrollable"},TouchEventHandler:{name:"TouchEventHandler",description:"Touch event handler"},WheelEventHandler:{name:"WheelEventHandler",description:"Wheel event handler"},RepaintsOnScroll:{name:"RepaintsOnScroll",description:"Repaints on scroll"}}
-WebInspector.LayerTreeModel.prototype={disable:function()
-{if(!this._enabled)
-return;this._enabled=false;this._layerTree=null;this.target().layerTreeAgent().disable();},enable:function()
-{if(this._enabled)
-return;this._enabled=true;this._forceEnable();},_forceEnable:function()
-{this._layerTree=new WebInspector.AgentLayerTree(this.target());this._lastPaintRectByLayerId={};this.target().layerTreeAgent().enable();},setLayerTree:function(layerTree)
-{this.disable();this._layerTree=layerTree;this.dispatchEventToListeners(WebInspector.LayerTreeModel.Events.LayerTreeChanged);},layerTree:function()
-{return this._layerTree;},_layerTreeChanged:function(layers)
-{if(!this._enabled)
-return;var layerTree=(this._layerTree);layerTree.setLayers(layers,onLayersSet.bind(this));function onLayersSet()
-{for(var layerId in this._lastPaintRectByLayerId){var lastPaintRect=this._lastPaintRectByLayerId[layerId];var layer=layerTree.layerById(layerId);if(layer)
-layer._lastPaintRect=lastPaintRect;}
-this._lastPaintRectByLayerId={};this.dispatchEventToListeners(WebInspector.LayerTreeModel.Events.LayerTreeChanged);}},_layerPainted:function(layerId,clipRect)
-{if(!this._enabled)
-return;var layerTree=(this._layerTree);var layer=layerTree.layerById(layerId);if(!layer){this._lastPaintRectByLayerId[layerId]=clipRect;return;}
-layer._didPaint(clipRect);this.dispatchEventToListeners(WebInspector.LayerTreeModel.Events.LayerPainted,layer);},_onMainFrameNavigated:function()
-{if(this._enabled)
-this._forceEnable();},__proto__:WebInspector.SDKModel.prototype}
-WebInspector.LayerTreeBase=function(target)
-{this._target=target;this._domModel=target?WebInspector.DOMModel.fromTarget(target):null;this._layersById={};this._backendNodeIdToNode=new Map();this._reset();}
-WebInspector.LayerTreeBase.prototype={_reset:function()
-{this._root=null;this._contentRoot=null;},target:function()
-{return this._target;},root:function()
-{return this._root;},contentRoot:function()
-{return this._contentRoot;},forEachLayer:function(callback,root)
-{if(!root){root=this.root();if(!root)
-return false;}
-return callback(root)||root.children().some(this.forEachLayer.bind(this,callback));},layerById:function(id)
-{return this._layersById[id]||null;},_resolveBackendNodeIds:function(requestedNodeIds,callback)
-{if(!requestedNodeIds.size||!this._domModel){callback();return;}
-if(this._domModel)
-this._domModel.pushNodesByBackendIdsToFrontend(requestedNodeIds,populateBackendNodeMap.bind(this));function populateBackendNodeMap(nodesMap)
-{if(nodesMap){for(var nodeId of nodesMap.keysArray())
-this._backendNodeIdToNode.set(nodeId,nodesMap.get(nodeId)||null);}
-callback();}},setViewportSize:function(viewportSize)
-{this._viewportSize=viewportSize;},viewportSize:function()
-{return this._viewportSize;},_nodeForId:function(id)
-{return this._domModel?this._domModel.nodeForId(id):null;}}
-WebInspector.TracingLayerTree=function(target)
-{WebInspector.LayerTreeBase.call(this,target);this._tileById=new Map();}
-WebInspector.TracingLayerTree.prototype={setLayers:function(root,callback)
-{var idsToResolve=new Set();this._extractNodeIdsToResolve(idsToResolve,{},root);this._resolveBackendNodeIds(idsToResolve,onBackendNodeIdsResolved.bind(this));function onBackendNodeIdsResolved()
-{var oldLayersById=this._layersById;this._layersById={};this._contentRoot=null;this._root=this._innerSetLayers(oldLayersById,root);callback();}},setTiles:function(tiles)
-{this._tileById=new Map();for(var tile of tiles)
-this._tileById.set(tile.id,tile);},tileById:function(id)
-{return this._tileById.get(id)||null;},_innerSetLayers:function(oldLayersById,payload)
-{var layer=(oldLayersById[payload.layer_id]);if(layer)
-layer._reset(payload);else
-layer=new WebInspector.TracingLayer(payload);this._layersById[payload.layer_id]=layer;if(payload.owner_node)
-layer._setNode(this._backendNodeIdToNode.get(payload.owner_node)||null);if(!this._contentRoot&&layer.drawsContent())
-this._contentRoot=layer;for(var i=0;payload.children&&i<payload.children.length;++i)
-layer.addChild(this._innerSetLayers(oldLayersById,payload.children[i]));return layer;},_extractNodeIdsToResolve:function(nodeIdsToResolve,seenNodeIds,payload)
-{var backendNodeId=payload.owner_node;if(backendNodeId&&!this._backendNodeIdToNode.has(backendNodeId))
-nodeIdsToResolve.add(backendNodeId);for(var i=0;payload.children&&i<payload.children.length;++i)
-this._extractNodeIdsToResolve(nodeIdsToResolve,seenNodeIds,payload.children[i]);},__proto__:WebInspector.LayerTreeBase.prototype}
-WebInspector.AgentLayerTree=function(target)
-{WebInspector.LayerTreeBase.call(this,target);}
-WebInspector.AgentLayerTree.prototype={setLayers:function(payload,callback)
-{if(!payload){onBackendNodeIdsResolved.call(this);return;}
-var idsToResolve=new Set();for(var i=0;i<payload.length;++i){var backendNodeId=payload[i].backendNodeId;if(!backendNodeId||this._backendNodeIdToNode.has(backendNodeId))
-continue;idsToResolve.add(backendNodeId);}
-this._resolveBackendNodeIds(idsToResolve,onBackendNodeIdsResolved.bind(this));function onBackendNodeIdsResolved()
-{this._innerSetLayers(payload);callback();}},_innerSetLayers:function(layers)
-{this._reset();if(!layers)
-return;var oldLayersById=this._layersById;this._layersById={};for(var i=0;i<layers.length;++i){var layerId=layers[i].layerId;var layer=oldLayersById[layerId];if(layer)
-layer._reset(layers[i]);else
-layer=new WebInspector.AgentLayer(this._target,layers[i]);this._layersById[layerId]=layer;var backendNodeId=layers[i].backendNodeId;if(backendNodeId)
-layer._setNode(this._backendNodeIdToNode.get(backendNodeId));if(!this._contentRoot&&layer.drawsContent())
-this._contentRoot=layer;var parentId=layer.parentId();if(parentId){var parent=this._layersById[parentId];if(!parent)
-console.assert(parent,"missing parent "+parentId+" for layer "+layerId);parent.addChild(layer);}else{if(this._root)
-console.assert(false,"Multiple root layers");this._root=layer;}}
-if(this._root)
-this._root._calculateQuad(new WebKitCSSMatrix());},__proto__:WebInspector.LayerTreeBase.prototype}
-WebInspector.Layer=function()
-{}
-WebInspector.Layer.prototype={id:function(){},parentId:function(){},parent:function(){},isRoot:function(){},children:function(){},addChild:function(child){},node:function(){},nodeForSelfOrAncestor:function(){},offsetX:function(){},offsetY:function(){},width:function(){},height:function(){},transform:function(){},quad:function(){},anchorPoint:function(){},invisible:function(){},paintCount:function(){},lastPaintRect:function(){},scrollRects:function(){},gpuMemoryUsage:function(){},requestCompositingReasons:function(callback){},drawsContent:function(){}}
-WebInspector.AgentLayer=function(target,layerPayload)
-{this._target=target;this._reset(layerPayload);}
-WebInspector.AgentLayer.prototype={id:function()
-{return this._layerPayload.layerId;},parentId:function()
-{return this._layerPayload.parentLayerId;},parent:function()
-{return this._parent;},isRoot:function()
-{return!this.parentId();},children:function()
-{return this._children;},addChild:function(child)
-{if(child._parent)
-console.assert(false,"Child already has a parent");this._children.push(child);child._parent=this;},_setNode:function(node)
-{this._node=node;},node:function()
-{return this._node;},nodeForSelfOrAncestor:function()
-{for(var layer=this;layer;layer=layer._parent){if(layer._node)
-return layer._node;}
-return null;},offsetX:function()
-{return this._layerPayload.offsetX;},offsetY:function()
-{return this._layerPayload.offsetY;},width:function()
-{return this._layerPayload.width;},height:function()
-{return this._layerPayload.height;},transform:function()
-{return this._layerPayload.transform;},quad:function()
-{return this._quad;},anchorPoint:function()
-{return[this._layerPayload.anchorX||0,this._layerPayload.anchorY||0,this._layerPayload.anchorZ||0,];},invisible:function()
-{return this._layerPayload.invisible;},paintCount:function()
-{return this._paintCount||this._layerPayload.paintCount;},lastPaintRect:function()
-{return this._lastPaintRect;},scrollRects:function()
-{return this._scrollRects;},requestCompositingReasons:function(callback)
-{if(!this._target){callback([]);return;}
-var wrappedCallback=InspectorBackend.wrapClientCallback(callback,"LayerTreeAgent.reasonsForCompositingLayer(): ",undefined,[]);this._target.layerTreeAgent().compositingReasons(this.id(),wrappedCallback);},drawsContent:function()
-{return this._layerPayload.drawsContent;},gpuMemoryUsage:function()
-{var bytesPerPixel=4;return this.drawsContent()?this.width()*this.height()*bytesPerPixel:0;},requestSnapshot:function(callback)
-{if(!this._target){callback();return;}
-var wrappedCallback=InspectorBackend.wrapClientCallback(callback,"LayerTreeAgent.makeSnapshot(): ",WebInspector.PaintProfilerSnapshot.bind(null,this._target));this._target.layerTreeAgent().makeSnapshot(this.id(),wrappedCallback);},_didPaint:function(rect)
-{this._lastPaintRect=rect;this._paintCount=this.paintCount()+1;this._image=null;},_reset:function(layerPayload)
-{this._node=null;this._children=[];this._parent=null;this._paintCount=0;this._layerPayload=layerPayload;this._image=null;this._scrollRects=this._layerPayload.scrollRects||[];},_matrixFromArray:function(a)
-{function toFixed9(x){return x.toFixed(9);}
-return new WebKitCSSMatrix("matrix3d("+a.map(toFixed9).join(",")+")");},_calculateTransformToViewport:function(parentTransform)
-{var offsetMatrix=new WebKitCSSMatrix().translate(this._layerPayload.offsetX,this._layerPayload.offsetY);var matrix=offsetMatrix;if(this._layerPayload.transform){var transformMatrix=this._matrixFromArray(this._layerPayload.transform);var anchorVector=new WebInspector.Geometry.Vector(this._layerPayload.width*this.anchorPoint()[0],this._layerPayload.height*this.anchorPoint()[1],this.anchorPoint()[2]);var anchorPoint=WebInspector.Geometry.multiplyVectorByMatrixAndNormalize(anchorVector,matrix);var anchorMatrix=new WebKitCSSMatrix().translate(-anchorPoint.x,-anchorPoint.y,-anchorPoint.z);matrix=anchorMatrix.inverse().multiply(transformMatrix.multiply(anchorMatrix.multiply(matrix)));}
-matrix=parentTransform.multiply(matrix);return matrix;},_createVertexArrayForRect:function(width,height)
-{return[0,0,0,width,0,0,width,height,0,0,height,0];},_calculateQuad:function(parentTransform)
-{var matrix=this._calculateTransformToViewport(parentTransform);this._quad=[];var vertices=this._createVertexArrayForRect(this._layerPayload.width,this._layerPayload.height);for(var i=0;i<4;++i){var point=WebInspector.Geometry.multiplyVectorByMatrixAndNormalize(new WebInspector.Geometry.Vector(vertices[i*3],vertices[i*3+1],vertices[i*3+2]),matrix);this._quad.push(point.x,point.y);}
-function calculateQuadForLayer(layer)
-{layer._calculateQuad(matrix);}
-this._children.forEach(calculateQuadForLayer);}}
-WebInspector.TracingLayer=function(payload)
-{this._reset(payload);}
-WebInspector.TracingLayer.prototype={_reset:function(payload)
-{this._node=null;this._layerId=String(payload.layer_id);this._offsetX=payload.position[0];this._offsetY=payload.position[1];this._width=payload.bounds.width;this._height=payload.bounds.height;this._children=[];this._parentLayerId=null;this._parent=null;this._quad=payload.layer_quad||[];this._createScrollRects(payload);this._compositingReasons=payload.compositing_reasons||[];this._drawsContent=!!payload.draws_content;this._gpuMemoryUsage=payload.gpu_memory_usage;},id:function()
-{return this._layerId;},parentId:function()
-{return this._parentLayerId;},parent:function()
-{return this._parent;},isRoot:function()
-{return!this.parentId();},children:function()
-{return this._children;},addChild:function(child)
-{if(child._parent)
-console.assert(false,"Child already has a parent");this._children.push(child);child._parent=this;child._parentLayerId=this._layerId;},_setNode:function(node)
-{this._node=node;},node:function()
-{return this._node;},nodeForSelfOrAncestor:function()
-{for(var layer=this;layer;layer=layer._parent){if(layer._node)
-return layer._node;}
-return null;},offsetX:function()
-{return this._offsetX;},offsetY:function()
-{return this._offsetY;},width:function()
-{return this._width;},height:function()
-{return this._height;},transform:function()
-{return null;},quad:function()
-{return this._quad;},anchorPoint:function()
-{return[0.5,0.5,0];},invisible:function()
-{return false;},paintCount:function()
-{return 0;},lastPaintRect:function()
-{return null;},scrollRects:function()
-{return this._scrollRects;},gpuMemoryUsage:function()
-{return this._gpuMemoryUsage;},_scrollRectsFromParams:function(params,type)
-{return{rect:{x:params[0],y:params[1],width:params[2],height:params[3]},type:type};},_createScrollRects:function(payload)
-{this._scrollRects=[];if(payload.non_fast_scrollable_region)
-this._scrollRects.push(this._scrollRectsFromParams(payload.non_fast_scrollable_region,WebInspector.LayerTreeModel.ScrollRectType.NonFastScrollable.name));if(payload.touch_event_handler_region)
-this._scrollRects.push(this._scrollRectsFromParams(payload.touch_event_handler_region,WebInspector.LayerTreeModel.ScrollRectType.TouchEventHandler.name));if(payload.wheel_event_handler_region)
-this._scrollRects.push(this._scrollRectsFromParams(payload.wheel_event_handler_region,WebInspector.LayerTreeModel.ScrollRectType.WheelEventHandler.name));if(payload.scroll_event_handler_region)
-this._scrollRects.push(this._scrollRectsFromParams(payload.scroll_event_handler_region,WebInspector.LayerTreeModel.ScrollRectType.RepaintsOnScroll.name));},requestCompositingReasons:function(callback)
-{callback(this._compositingReasons);},drawsContent:function()
-{return this._drawsContent;}}
-WebInspector.DeferredLayerTree=function(target)
-{this._target=target;}
-WebInspector.DeferredLayerTree.prototype={resolve:function(callback){},target:function()
-{return this._target;}};WebInspector.LayerTreeDispatcher=function(layerTreeModel)
-{this._layerTreeModel=layerTreeModel;}
-WebInspector.LayerTreeDispatcher.prototype={layerTreeDidChange:function(layers)
-{this._layerTreeModel._layerTreeChanged(layers||null);},layerPainted:function(layerId,clipRect)
-{this._layerTreeModel._layerPainted(layerId,clipRect);}}
-WebInspector.LayerTreeModel.fromTarget=function(target)
-{if(!target.isPage())
-return null;var model=(target.model(WebInspector.LayerTreeModel));if(!model)
-model=new WebInspector.LayerTreeModel(target);return model;};WebInspector.CountersGraph=function(delegate,model,filters)
+WebInspector.CountersGraph=function(delegate,model,filters)
 {WebInspector.VBox.call(this);this.element.id="memory-graphs-container";this._delegate=delegate;this._model=model;this._filters=filters;this._calculator=new WebInspector.CounterGraphCalculator(this._model);this._infoWidget=new WebInspector.HBox();this._infoWidget.element.classList.add("memory-counter-selector-swatches","timeline-toolbar-resizer");this._infoWidget.show(this.element);this._graphsContainer=new WebInspector.VBox();this._graphsContainer.show(this.element);var canvasWidget=new WebInspector.VBoxWithResizeCallback(this._resize.bind(this));canvasWidget.show(this._graphsContainer.element);this._createCurrentValuesBar();this._canvasContainer=canvasWidget.element;this._canvasContainer.id="memory-graphs-canvas-container";this._canvas=this._canvasContainer.createChild("canvas");this._canvas.id="memory-counters-graph";this._canvasContainer.addEventListener("mouseover",this._onMouseMove.bind(this),true);this._canvasContainer.addEventListener("mousemove",this._onMouseMove.bind(this),true);this._canvasContainer.addEventListener("mouseleave",this._onMouseLeave.bind(this),true);this._canvasContainer.addEventListener("click",this._onClick.bind(this),true);this._timelineGrid=new WebInspector.TimelineGrid();this._canvasContainer.appendChild(this._timelineGrid.dividersElement);this._counters=[];this._counterUI=[];}
 WebInspector.CountersGraph.prototype={target:function()
 {return this._model.target();},_createCurrentValuesBar:function()
@@ -438,7 +268,7 @@ return;this._layerViewHost.hoverObject(this._selectionFromEventPoint(event));},_
 {this._mouseDownX=event.clientX;this._mouseDownY=event.clientY;},_onMouseUp:function(event)
 {const maxDistanceInPixels=6;if(this._mouseDownX&&Math.abs(event.clientX-this._mouseDownX)<maxDistanceInPixels&&Math.abs(event.clientY-this._mouseDownY)<maxDistanceInPixels)
 this._layerViewHost.selectObject(this._selectionFromEventPoint(event));delete this._mouseDownX;delete this._mouseDownY;},_onDoubleClick:function(event)
-{var selection=this._selectionFromEventPoint(event);if(selection){if(selection.type()==WebInspector.LayerView.Selection.Type.Tile)
+{var selection=this._selectionFromEventPoint(event);if(selection){if(selection.type()===WebInspector.LayerView.Selection.Type.Tile)
 this.dispatchEventToListeners(WebInspector.Layers3DView.Events.PaintProfilerRequested,selection.traceEvent());else if(selection.layer())
 this.dispatchEventToListeners(WebInspector.Layers3DView.Events.LayerSnapshotRequested,selection.layer());}
 event.stopPropagation();},__proto__:WebInspector.VBox.prototype}
@@ -530,381 +360,7 @@ return;var pid=mainMetaEvent.thread.process().id();var mainCpuProfile=this._cpuP
 continue;var cpuProfile=this._cpuProfiles.get(workerTarget.id());this._injectCpuProfileEvent(pid,metaEvent.args["data"]["workerThreadId"],cpuProfile);}
 this._cpuProfiles=null;},tracingBufferUsage:function(usage)
 {this._delegate.recordingProgress(usage);},eventsRetrievalProgress:function(progress)
-{this._delegate.loadingProgress(progress);}};WebInspector.TimelineModel=function(eventFilter)
-{this._eventFilter=eventFilter;this.reset();}
-WebInspector.TimelineModel.RecordType={Task:"Task",Program:"Program",EventDispatch:"EventDispatch",GPUTask:"GPUTask",Animation:"Animation",RequestMainThreadFrame:"RequestMainThreadFrame",BeginFrame:"BeginFrame",NeedsBeginFrameChanged:"NeedsBeginFrameChanged",BeginMainThreadFrame:"BeginMainThreadFrame",ActivateLayerTree:"ActivateLayerTree",DrawFrame:"DrawFrame",HitTest:"HitTest",ScheduleStyleRecalculation:"ScheduleStyleRecalculation",RecalculateStyles:"RecalculateStyles",UpdateLayoutTree:"UpdateLayoutTree",InvalidateLayout:"InvalidateLayout",Layout:"Layout",UpdateLayer:"UpdateLayer",UpdateLayerTree:"UpdateLayerTree",PaintSetup:"PaintSetup",Paint:"Paint",PaintImage:"PaintImage",Rasterize:"Rasterize",RasterTask:"RasterTask",ScrollLayer:"ScrollLayer",CompositeLayers:"CompositeLayers",ScheduleStyleInvalidationTracking:"ScheduleStyleInvalidationTracking",StyleRecalcInvalidationTracking:"StyleRecalcInvalidationTracking",StyleInvalidatorInvalidationTracking:"StyleInvalidatorInvalidationTracking",LayoutInvalidationTracking:"LayoutInvalidationTracking",LayerInvalidationTracking:"LayerInvalidationTracking",PaintInvalidationTracking:"PaintInvalidationTracking",ScrollInvalidationTracking:"ScrollInvalidationTracking",ParseHTML:"ParseHTML",ParseAuthorStyleSheet:"ParseAuthorStyleSheet",TimerInstall:"TimerInstall",TimerRemove:"TimerRemove",TimerFire:"TimerFire",XHRReadyStateChange:"XHRReadyStateChange",XHRLoad:"XHRLoad",CompileScript:"v8.compile",EvaluateScript:"EvaluateScript",CommitLoad:"CommitLoad",MarkLoad:"MarkLoad",MarkDOMContent:"MarkDOMContent",MarkFirstPaint:"MarkFirstPaint",TimeStamp:"TimeStamp",ConsoleTime:"ConsoleTime",UserTiming:"UserTiming",ResourceSendRequest:"ResourceSendRequest",ResourceReceiveResponse:"ResourceReceiveResponse",ResourceReceivedData:"ResourceReceivedData",ResourceFinish:"ResourceFinish",FunctionCall:"FunctionCall",GCEvent:"GCEvent",MajorGC:"MajorGC",MinorGC:"MinorGC",JSFrame:"JSFrame",JSSample:"JSSample",V8Sample:"V8Sample",JitCodeAdded:"JitCodeAdded",JitCodeMoved:"JitCodeMoved",ParseScriptOnBackground:"v8.parseOnBackground",UpdateCounters:"UpdateCounters",RequestAnimationFrame:"RequestAnimationFrame",CancelAnimationFrame:"CancelAnimationFrame",FireAnimationFrame:"FireAnimationFrame",RequestIdleCallback:"RequestIdleCallback",CancelIdleCallback:"CancelIdleCallback",FireIdleCallback:"FireIdleCallback",WebSocketCreate:"WebSocketCreate",WebSocketSendHandshakeRequest:"WebSocketSendHandshakeRequest",WebSocketReceiveHandshakeResponse:"WebSocketReceiveHandshakeResponse",WebSocketDestroy:"WebSocketDestroy",EmbedderCallback:"EmbedderCallback",SetLayerTreeId:"SetLayerTreeId",TracingStartedInPage:"TracingStartedInPage",TracingSessionIdForWorker:"TracingSessionIdForWorker",DecodeImage:"Decode Image",ResizeImage:"Resize Image",DrawLazyPixelRef:"Draw LazyPixelRef",DecodeLazyPixelRef:"Decode LazyPixelRef",LazyPixelRef:"LazyPixelRef",LayerTreeHostImplSnapshot:"cc::LayerTreeHostImpl",PictureSnapshot:"cc::Picture",DisplayItemListSnapshot:"cc::DisplayItemList",LatencyInfo:"LatencyInfo",LatencyInfoFlow:"LatencyInfo.Flow",InputLatencyMouseMove:"InputLatency::MouseMove",InputLatencyMouseWheel:"InputLatency::MouseWheel",ImplSideFling:"InputHandlerProxy::HandleGestureFling::started",GCIdleLazySweep:"ThreadState::performIdleLazySweep",GCCompleteSweep:"ThreadState::completeSweep",GCCollectGarbage:"BlinkGCMarking",CpuProfile:"CpuProfile"}
-WebInspector.TimelineModel.Category={Console:"blink.console",UserTiming:"blink.user_timing",LatencyInfo:"latencyInfo"};WebInspector.TimelineModel.WarningType={ForcedStyle:"ForcedStyle",ForcedLayout:"ForcedLayout",IdleDeadlineExceeded:"IdleDeadlineExceeded",V8Deopt:"V8Deopt"}
-WebInspector.TimelineModel.MainThreadName="main";WebInspector.TimelineModel.WorkerThreadName="DedicatedWorker Thread";WebInspector.TimelineModel.RendererMainThreadName="CrRendererMain";WebInspector.TimelineModel.forEachEvent=function(events,onStartEvent,onEndEvent,onInstantEvent,startTime,endTime)
-{startTime=startTime||0;endTime=endTime||Infinity;var stack=[];for(var i=0;i<events.length;++i){var e=events[i];if((e.endTime||e.startTime)<startTime)
-continue;if(e.startTime>=endTime)
-break;if(WebInspector.TracingModel.isAsyncPhase(e.phase)||WebInspector.TracingModel.isFlowPhase(e.phase))
-continue;while(stack.length&&stack.peekLast().endTime<=e.startTime)
-onEndEvent(stack.pop());if(e.duration){onStartEvent(e);stack.push(e);}else{onInstantEvent&&onInstantEvent(e,stack.peekLast()||null);}}
-while(stack.length)
-onEndEvent(stack.pop());}
-WebInspector.TimelineModel.DevToolsMetadataEvent={TracingStartedInBrowser:"TracingStartedInBrowser",TracingStartedInPage:"TracingStartedInPage",TracingSessionIdForWorker:"TracingSessionIdForWorker",};WebInspector.TimelineModel.VirtualThread=function(name)
-{this.name=name;this.events=[];this.asyncEventsByGroup=new Map();}
-WebInspector.TimelineModel.VirtualThread.prototype={isWorker:function()
-{return this.name===WebInspector.TimelineModel.WorkerThreadName;}}
-WebInspector.TimelineModel.Record=function(traceEvent)
-{this._event=traceEvent;this._children=[];}
-WebInspector.TimelineModel.Record._compareStartTime=function(a,b)
-{return a.startTime()<=b.startTime()?-1:1;}
-WebInspector.TimelineModel.Record.prototype={target:function()
-{var threadName=this._event.thread.name();return threadName===WebInspector.TimelineModel.RendererMainThreadName?WebInspector.targetManager.targets()[0]||null:null;},children:function()
-{return this._children;},startTime:function()
-{return this._event.startTime;},endTime:function()
-{return this._event.endTime||this._event.startTime;},thread:function()
-{if(this._event.thread.name()===WebInspector.TimelineModel.RendererMainThreadName)
-return WebInspector.TimelineModel.MainThreadName;return this._event.thread.name();},type:function()
-{return WebInspector.TimelineModel._eventType(this._event);},getUserObject:function(key)
-{if(key==="TimelineUIUtils::preview-element")
-return this._event.previewElement;throw new Error("Unexpected key: "+key);},setUserObject:function(key,value)
-{if(key!=="TimelineUIUtils::preview-element")
-throw new Error("Unexpected key: "+key);this._event.previewElement=(value);},traceEvent:function()
-{return this._event;},_addChild:function(child)
-{this._children.push(child);child.parent=this;}}
-WebInspector.TimelineModel.MetadataEvents;WebInspector.TimelineModel._eventType=function(event)
-{if(event.hasCategory(WebInspector.TimelineModel.Category.Console))
-return WebInspector.TimelineModel.RecordType.ConsoleTime;if(event.hasCategory(WebInspector.TimelineModel.Category.UserTiming))
-return WebInspector.TimelineModel.RecordType.UserTiming;if(event.hasCategory(WebInspector.TimelineModel.Category.LatencyInfo))
-return WebInspector.TimelineModel.RecordType.LatencyInfo;return(event.name);}
-WebInspector.TimelineModel.prototype={forAllRecords:function(preOrderCallback,postOrderCallback)
-{function processRecords(records,depth)
-{for(var i=0;i<records.length;++i){var record=records[i];if(preOrderCallback&&preOrderCallback(record,depth))
-return true;if(processRecords(record.children(),depth+1))
-return true;if(postOrderCallback&&postOrderCallback(record,depth))
-return true;}
-return false;}
-return processRecords(this._records,0);},forAllFilteredRecords:function(filters,callback)
-{function processRecord(record,depth)
-{var visible=WebInspector.TimelineModel.isVisible(filters,record.traceEvent());if(visible&&callback(record,depth))
-return true;for(var i=0;i<record.children().length;++i){if(processRecord.call(this,record.children()[i],visible?depth+1:depth))
-return true;}
-return false;}
-for(var i=0;i<this._records.length;++i)
-processRecord.call(this,this._records[i],0);},records:function()
-{return this._records;},cpuProfiles:function()
-{return this._cpuProfiles;},sessionId:function()
-{return this._sessionId;},target:function()
-{return WebInspector.targetManager.targets()[0];},setEvents:function(tracingModel,produceTraceStartedInPage)
-{this.reset();this._resetProcessingState();this._minimumRecordTime=tracingModel.minimumRecordTime();this._maximumRecordTime=tracingModel.maximumRecordTime();var metadataEvents=this._processMetadataEvents(tracingModel,!!produceTraceStartedInPage);var startTime=0;for(var i=0,length=metadataEvents.page.length;i<length;i++){var metaEvent=metadataEvents.page[i];var process=metaEvent.thread.process();var endTime=i+1<length?metadataEvents.page[i+1].startTime:Infinity;this._currentPage=metaEvent.args["data"]&&metaEvent.args["data"]["page"];for(var thread of process.sortedThreads()){if(thread.name()===WebInspector.TimelineModel.WorkerThreadName&&!metadataEvents.workers.some(function(e){return e.args["data"]["workerThreadId"]===thread.id();}))
-continue;this._processThreadEvents(startTime,endTime,metaEvent.thread,thread);}
-startTime=endTime;}
-this._inspectedTargetEvents.sort(WebInspector.TracingModel.Event.compareStartTime);this._processBrowserEvents(tracingModel);this._buildTimelineRecords();this._buildGPUEvents(tracingModel);this._insertFirstPaintEvent();this._resetProcessingState();},_processMetadataEvents:function(tracingModel,produceTraceStartedInPage)
-{var metadataEvents=tracingModel.devToolsMetadataEvents();var pageDevToolsMetadataEvents=[];var workersDevToolsMetadataEvents=[];for(var event of metadataEvents){if(event.name===WebInspector.TimelineModel.DevToolsMetadataEvent.TracingStartedInPage){pageDevToolsMetadataEvents.push(event);}else if(event.name===WebInspector.TimelineModel.DevToolsMetadataEvent.TracingSessionIdForWorker){workersDevToolsMetadataEvents.push(event);}else if(event.name===WebInspector.TimelineModel.DevToolsMetadataEvent.TracingStartedInBrowser){console.assert(!this._mainFrameNodeId,"Multiple sessions in trace");this._mainFrameNodeId=event.args["frameTreeNodeId"];}}
-if(!pageDevToolsMetadataEvents.length){var pageMetaEvent=produceTraceStartedInPage?this._makeMockPageMetadataEvent(tracingModel):null;if(!pageMetaEvent){console.error(WebInspector.TimelineModel.DevToolsMetadataEvent.TracingStartedInPage+" event not found.");return{page:[],workers:[]};}
-pageDevToolsMetadataEvents.push(pageMetaEvent);}
-var sessionId=pageDevToolsMetadataEvents[0].args["sessionId"]||pageDevToolsMetadataEvents[0].args["data"]["sessionId"];this._sessionId=sessionId;var mismatchingIds=new Set();function checkSessionId(event)
-{var args=event.args;if(args["data"])
-args=args["data"];var id=args["sessionId"];if(id===sessionId)
-return true;mismatchingIds.add(id);return false;}
-var result={page:pageDevToolsMetadataEvents.filter(checkSessionId).sort(WebInspector.TracingModel.Event.compareStartTime),workers:workersDevToolsMetadataEvents.filter(checkSessionId).sort(WebInspector.TracingModel.Event.compareStartTime)};if(mismatchingIds.size)
-WebInspector.console.error("Timeline recording was started in more than one page simultaneously. Session id mismatch: "+this._sessionId+" and "+mismatchingIds.valuesArray()+".");return result;},_makeMockPageMetadataEvent:function(tracingModel)
-{var rendererMainThreadName=WebInspector.TimelineModel.RendererMainThreadName;var process=Object.values(tracingModel.sortedProcesses()).filter(function(p){return p.threadByName(rendererMainThreadName);})[0];var thread=process&&process.threadByName(rendererMainThreadName);if(!thread)
-return null;var pageMetaEvent=new WebInspector.TracingModel.Event(WebInspector.TracingModel.DevToolsMetadataEventCategory,WebInspector.TimelineModel.DevToolsMetadataEvent.TracingStartedInPage,WebInspector.TracingModel.Phase.Metadata,tracingModel.minimumRecordTime(),thread);pageMetaEvent.addArgs({"data":{"sessionId":"mockSessionId"}});return pageMetaEvent;},_insertFirstPaintEvent:function()
-{if(!this._firstCompositeLayers)
-return;var recordTypes=WebInspector.TimelineModel.RecordType;var i=this._inspectedTargetEvents.lowerBound(this._firstCompositeLayers,WebInspector.TracingModel.Event.compareStartTime);for(;i<this._inspectedTargetEvents.length&&this._inspectedTargetEvents[i].name!==recordTypes.DrawFrame;++i){}
-if(i>=this._inspectedTargetEvents.length)
-return;var drawFrameEvent=this._inspectedTargetEvents[i];var firstPaintEvent=new WebInspector.TracingModel.Event(drawFrameEvent.categoriesString,recordTypes.MarkFirstPaint,WebInspector.TracingModel.Phase.Instant,drawFrameEvent.startTime,drawFrameEvent.thread);this._mainThreadEvents.splice(this._mainThreadEvents.lowerBound(firstPaintEvent,WebInspector.TracingModel.Event.compareStartTime),0,firstPaintEvent);var firstPaintRecord=new WebInspector.TimelineModel.Record(firstPaintEvent);this._eventDividerRecords.splice(this._eventDividerRecords.lowerBound(firstPaintRecord,WebInspector.TimelineModel.Record._compareStartTime),0,firstPaintRecord);},_processBrowserEvents:function(tracingModel)
-{var browserMain=tracingModel.threadByName("Browser","CrBrowserMain");if(!browserMain)
-return;browserMain.events().forEach(this._processBrowserEvent,this);var asyncEventsByGroup=new Map();this._processAsyncEvents(asyncEventsByGroup,browserMain.asyncEvents());this._mergeAsyncEvents(this._mainThreadAsyncEventsByGroup,asyncEventsByGroup);},_buildTimelineRecords:function()
-{var topLevelRecords=this._buildTimelineRecordsForThread(this.mainThreadEvents());for(var i=0;i<topLevelRecords.length;i++){var record=topLevelRecords[i];if(WebInspector.TracingModel.isTopLevelEvent(record.traceEvent()))
-this._mainThreadTasks.push(record);}
-function processVirtualThreadEvents(virtualThread)
-{var threadRecords=this._buildTimelineRecordsForThread(virtualThread.events);topLevelRecords=topLevelRecords.mergeOrdered(threadRecords,WebInspector.TimelineModel.Record._compareStartTime);}
-this.virtualThreads().forEach(processVirtualThreadEvents.bind(this));this._records=topLevelRecords;},_buildGPUEvents:function(tracingModel)
-{var thread=tracingModel.threadByName("GPU Process","CrGpuMain");if(!thread)
-return;var gpuEventName=WebInspector.TimelineModel.RecordType.GPUTask;this._gpuEvents=thread.events().filter(event=>event.name===gpuEventName);},_buildTimelineRecordsForThread:function(threadEvents)
-{var recordStack=[];var topLevelRecords=[];for(var i=0,size=threadEvents.length;i<size;++i){var event=threadEvents[i];for(var top=recordStack.peekLast();top&&top._event.endTime<=event.startTime;top=recordStack.peekLast())
-recordStack.pop();if(event.phase===WebInspector.TracingModel.Phase.AsyncEnd||event.phase===WebInspector.TracingModel.Phase.NestableAsyncEnd)
-continue;var parentRecord=recordStack.peekLast();if(WebInspector.TracingModel.isAsyncBeginPhase(event.phase)&&parentRecord&&event.endTime>parentRecord._event.endTime)
-continue;var record=new WebInspector.TimelineModel.Record(event);if(WebInspector.TimelineUIUtils.isMarkerEvent(event))
-this._eventDividerRecords.push(record);if(!this._eventFilter.accept(event)&&!WebInspector.TracingModel.isTopLevelEvent(event))
-continue;if(parentRecord)
-parentRecord._addChild(record);else
-topLevelRecords.push(record);if(event.endTime)
-recordStack.push(record);}
-return topLevelRecords;},_resetProcessingState:function()
-{this._asyncEventTracker=new WebInspector.TimelineAsyncEventTracker();this._invalidationTracker=new WebInspector.InvalidationTracker();this._layoutInvalidate={};this._lastScheduleStyleRecalculation={};this._paintImageEventByPixelRefId={};this._lastPaintForLayer={};this._lastRecalculateStylesEvent=null;this._currentScriptEvent=null;this._eventStack=[];this._hadCommitLoad=false;this._firstCompositeLayers=null;this._knownInputEvents=new Set();this._currentPage=null;},_processThreadEvents:function(startTime,endTime,mainThread,thread)
-{var events=thread.events();var asyncEvents=thread.asyncEvents();var jsSamples;if(Runtime.experiments.isEnabled("timelineTracingJSProfile")){jsSamples=WebInspector.TimelineJSProfileProcessor.processRawV8Samples(events);}else{var cpuProfileEvent=events.peekLast();if(cpuProfileEvent&&cpuProfileEvent.name===WebInspector.TimelineModel.RecordType.CpuProfile){var cpuProfile=cpuProfileEvent.args["data"]["cpuProfile"];if(cpuProfile){var jsProfileModel=new WebInspector.CPUProfileDataModel(cpuProfile);this._cpuProfiles.push(jsProfileModel);jsSamples=WebInspector.TimelineJSProfileProcessor.generateTracingEventsFromCpuProfile(jsProfileModel,thread);}}}
-if(jsSamples&&jsSamples.length)
-events=events.mergeOrdered(jsSamples,WebInspector.TracingModel.Event.orderedCompareStartTime);if(jsSamples||events.some(function(e){return e.name===WebInspector.TimelineModel.RecordType.JSSample;})){var jsFrameEvents=WebInspector.TimelineJSProfileProcessor.generateJSFrameEvents(events);if(jsFrameEvents&&jsFrameEvents.length)
-events=jsFrameEvents.mergeOrdered(events,WebInspector.TracingModel.Event.orderedCompareStartTime);}
-var threadEvents;var threadAsyncEventsByGroup;if(thread===mainThread){threadEvents=this._mainThreadEvents;threadAsyncEventsByGroup=this._mainThreadAsyncEventsByGroup;}else{var virtualThread=new WebInspector.TimelineModel.VirtualThread(thread.name());this._virtualThreads.push(virtualThread);threadEvents=virtualThread.events;threadAsyncEventsByGroup=virtualThread.asyncEventsByGroup;}
-this._eventStack=[];var i=events.lowerBound(startTime,function(time,event){return time-event.startTime});var length=events.length;for(;i<length;i++){var event=events[i];if(endTime&&event.startTime>=endTime)
-break;if(!this._processEvent(event))
-continue;threadEvents.push(event);this._inspectedTargetEvents.push(event);}
-this._processAsyncEvents(threadAsyncEventsByGroup,asyncEvents,startTime,endTime);if(thread.name()==="Compositor"){this._mergeAsyncEvents(this._mainThreadAsyncEventsByGroup,threadAsyncEventsByGroup);threadAsyncEventsByGroup.clear();}},_processAsyncEvents:function(asyncEventsByGroup,asyncEvents,startTime,endTime)
-{var i=startTime?asyncEvents.lowerBound(startTime,function(time,asyncEvent){return time-asyncEvent.startTime}):0;for(;i<asyncEvents.length;++i){var asyncEvent=asyncEvents[i];if(endTime&&asyncEvent.startTime>=endTime)
-break;var asyncGroup=this._processAsyncEvent(asyncEvent);if(!asyncGroup)
-continue;var groupAsyncEvents=asyncEventsByGroup.get(asyncGroup);if(!groupAsyncEvents){groupAsyncEvents=[];asyncEventsByGroup.set(asyncGroup,groupAsyncEvents);}
-groupAsyncEvents.push(asyncEvent);}},_processEvent:function(event)
-{var eventStack=this._eventStack;while(eventStack.length&&eventStack.peekLast().endTime<=event.startTime)
-eventStack.pop();var recordTypes=WebInspector.TimelineModel.RecordType;if(this._currentScriptEvent&&event.startTime>this._currentScriptEvent.endTime)
-this._currentScriptEvent=null;var eventData=event.args["data"]||event.args["beginData"]||{};if(eventData&&eventData["stackTrace"])
-event.stackTrace=eventData["stackTrace"];if(eventStack.length&&eventStack.peekLast().name===recordTypes.EventDispatch)
-eventStack.peekLast().hasChildren=true;this._asyncEventTracker.processEvent(event);if(event.initiator&&event.initiator.url)
-event.url=event.initiator.url;switch(event.name){case recordTypes.ResourceSendRequest:case recordTypes.WebSocketCreate:event.url=event.args["data"]["url"];event.initiator=eventStack.peekLast()||null;break;case recordTypes.ScheduleStyleRecalculation:this._lastScheduleStyleRecalculation[event.args["data"]["frame"]]=event;break;case recordTypes.UpdateLayoutTree:case recordTypes.RecalculateStyles:this._invalidationTracker.didRecalcStyle(event);if(event.args["beginData"])
-event.initiator=this._lastScheduleStyleRecalculation[event.args["beginData"]["frame"]];this._lastRecalculateStylesEvent=event;if(this._currentScriptEvent)
-event.warning=WebInspector.TimelineModel.WarningType.ForcedStyle;break;case recordTypes.ScheduleStyleInvalidationTracking:case recordTypes.StyleRecalcInvalidationTracking:case recordTypes.StyleInvalidatorInvalidationTracking:case recordTypes.LayoutInvalidationTracking:case recordTypes.LayerInvalidationTracking:case recordTypes.PaintInvalidationTracking:case recordTypes.ScrollInvalidationTracking:this._invalidationTracker.addInvalidation(new WebInspector.InvalidationTrackingEvent(event));break;case recordTypes.InvalidateLayout:var layoutInitator=event;var frameId=event.args["data"]["frame"];if(!this._layoutInvalidate[frameId]&&this._lastRecalculateStylesEvent&&this._lastRecalculateStylesEvent.endTime>event.startTime)
-layoutInitator=this._lastRecalculateStylesEvent.initiator;this._layoutInvalidate[frameId]=layoutInitator;break;case recordTypes.Layout:this._invalidationTracker.didLayout(event);var frameId=event.args["beginData"]["frame"];event.initiator=this._layoutInvalidate[frameId];if(event.args["endData"]){event.backendNodeId=event.args["endData"]["rootNode"];event.highlightQuad=event.args["endData"]["root"];}
-this._layoutInvalidate[frameId]=null;if(this._currentScriptEvent)
-event.warning=WebInspector.TimelineModel.WarningType.ForcedLayout;break;case recordTypes.EvaluateScript:case recordTypes.FunctionCall:if(!this._currentScriptEvent)
-this._currentScriptEvent=event;break;case recordTypes.SetLayerTreeId:this._inspectedTargetLayerTreeId=event.args["layerTreeId"]||event.args["data"]["layerTreeId"];break;case recordTypes.Paint:this._invalidationTracker.didPaint(event);event.highlightQuad=event.args["data"]["clip"];event.backendNodeId=event.args["data"]["nodeId"];if(!event.args["data"]["layerId"])
-break;var layerId=event.args["data"]["layerId"];this._lastPaintForLayer[layerId]=event;break;case recordTypes.DisplayItemListSnapshot:case recordTypes.PictureSnapshot:var layerUpdateEvent=this._findAncestorEvent(recordTypes.UpdateLayer);if(!layerUpdateEvent||layerUpdateEvent.args["layerTreeId"]!==this._inspectedTargetLayerTreeId)
-break;var paintEvent=this._lastPaintForLayer[layerUpdateEvent.args["layerId"]];if(paintEvent)
-paintEvent.picture=event;break;case recordTypes.ScrollLayer:event.backendNodeId=event.args["data"]["nodeId"];break;case recordTypes.PaintImage:event.backendNodeId=event.args["data"]["nodeId"];event.url=event.args["data"]["url"];break;case recordTypes.DecodeImage:case recordTypes.ResizeImage:var paintImageEvent=this._findAncestorEvent(recordTypes.PaintImage);if(!paintImageEvent){var decodeLazyPixelRefEvent=this._findAncestorEvent(recordTypes.DecodeLazyPixelRef);paintImageEvent=decodeLazyPixelRefEvent&&this._paintImageEventByPixelRefId[decodeLazyPixelRefEvent.args["LazyPixelRef"]];}
-if(!paintImageEvent)
-break;event.backendNodeId=paintImageEvent.backendNodeId;event.url=paintImageEvent.url;break;case recordTypes.DrawLazyPixelRef:var paintImageEvent=this._findAncestorEvent(recordTypes.PaintImage);if(!paintImageEvent)
-break;this._paintImageEventByPixelRefId[event.args["LazyPixelRef"]]=paintImageEvent;event.backendNodeId=paintImageEvent.backendNodeId;event.url=paintImageEvent.url;break;case recordTypes.MarkDOMContent:case recordTypes.MarkLoad:var page=eventData["page"];if(page&&page!==this._currentPage)
-return false;break;case recordTypes.CommitLoad:var page=eventData["page"];if(page&&page!==this._currentPage)
-return false;if(!eventData["isMainFrame"])
-break;this._hadCommitLoad=true;this._firstCompositeLayers=null;break;case recordTypes.CompositeLayers:if(!this._firstCompositeLayers&&this._hadCommitLoad)
-this._firstCompositeLayers=event;break;case recordTypes.FireIdleCallback:if(event.duration>eventData["allottedMilliseconds"]){event.warning=WebInspector.TimelineModel.WarningType.IdleDeadlineExceeded;}
-break;}
-if(WebInspector.TracingModel.isAsyncPhase(event.phase))
-return true;var duration=event.duration;if(!duration)
-return true;if(eventStack.length){var parent=eventStack.peekLast();parent.selfTime-=duration;if(parent.selfTime<0){var epsilon=1e-3;if(parent.selfTime<-epsilon)
-console.error("Children are longer than parent at "+event.startTime+" ("+(event.startTime-this.minimumRecordTime()).toFixed(3)+") by "+parent.selfTime.toFixed(3));parent.selfTime=0;}}
-event.selfTime=duration;eventStack.push(event);return true;},_processBrowserEvent:function(event)
-{if(event.name!==WebInspector.TimelineModel.RecordType.LatencyInfoFlow)
-return;var frameId=event.args["frameTreeNodeId"];if(typeof frameId==="number"&&frameId===this._mainFrameNodeId)
-this._knownInputEvents.add(event.bind_id);},_processAsyncEvent:function(asyncEvent)
-{var groups=WebInspector.TimelineUIUtils.asyncEventGroups();if(asyncEvent.hasCategory(WebInspector.TimelineModel.Category.Console))
-return groups.console;if(asyncEvent.hasCategory(WebInspector.TimelineModel.Category.UserTiming))
-return groups.userTiming;if(asyncEvent.name===WebInspector.TimelineModel.RecordType.Animation)
-return groups.animation;if(asyncEvent.hasCategory(WebInspector.TimelineModel.Category.LatencyInfo)||asyncEvent.name===WebInspector.TimelineModel.RecordType.ImplSideFling){var lastStep=asyncEvent.steps.peekLast();if(lastStep.phase!==WebInspector.TracingModel.Phase.AsyncEnd)
-return null;var data=lastStep.args["data"];asyncEvent.causedFrame=!!(data&&data["INPUT_EVENT_LATENCY_RENDERER_SWAP_COMPONENT"]);if(asyncEvent.hasCategory(WebInspector.TimelineModel.Category.LatencyInfo)){if(!this._knownInputEvents.has(lastStep.id))
-return null;if(asyncEvent.name===WebInspector.TimelineModel.RecordType.InputLatencyMouseMove&&!asyncEvent.causedFrame)
-return null;var rendererMain=data["INPUT_EVENT_LATENCY_RENDERER_MAIN_COMPONENT"];if(rendererMain){var time=rendererMain["time"]/1000;asyncEvent.steps[0].timeWaitingForMainThread=time-asyncEvent.steps[0].startTime;}}
-return groups.input;}
-return null;},_findAncestorEvent:function(name)
-{for(var i=this._eventStack.length-1;i>=0;--i){var event=this._eventStack[i];if(event.name===name)
-return event;}
-return null;},_mergeAsyncEvents:function(target,source)
-{for(var group of source.keys()){var events=target.get(group)||[];events=events.mergeOrdered(source.get(group)||[],WebInspector.TracingModel.Event.compareStartAndEndTime);target.set(group,events);}},reset:function()
-{this._virtualThreads=[];this._mainThreadEvents=[];this._mainThreadAsyncEventsByGroup=new Map();this._inspectedTargetEvents=[];this._records=[];this._mainThreadTasks=[];this._gpuEvents=[];this._eventDividerRecords=[];this._sessionId=null;this._mainFrameNodeId=null;this._cpuProfiles=[];this._minimumRecordTime=0;this._maximumRecordTime=0;},minimumRecordTime:function()
-{return this._minimumRecordTime;},maximumRecordTime:function()
-{return this._maximumRecordTime;},inspectedTargetEvents:function()
-{return this._inspectedTargetEvents;},mainThreadEvents:function()
-{return this._mainThreadEvents;},_setMainThreadEvents:function(events)
-{this._mainThreadEvents=events;},mainThreadAsyncEvents:function()
-{return this._mainThreadAsyncEventsByGroup;},virtualThreads:function()
-{return this._virtualThreads;},isEmpty:function()
-{return this.minimumRecordTime()===0&&this.maximumRecordTime()===0;},mainThreadTasks:function()
-{return this._mainThreadTasks;},gpuEvents:function()
-{return this._gpuEvents;},eventDividerRecords:function()
-{return this._eventDividerRecords;},networkRequests:function()
-{var requests=new Map();var requestsList=[];var zeroStartRequestsList=[];var types=WebInspector.TimelineModel.RecordType;var resourceTypes=new Set([types.ResourceSendRequest,types.ResourceReceiveResponse,types.ResourceReceivedData,types.ResourceFinish]);var events=this.mainThreadEvents();for(var i=0;i<events.length;++i){var e=events[i];if(!resourceTypes.has(e.name))
-continue;var id=e.args["data"]["requestId"];var request=requests.get(id);if(request){request.addEvent(e);}else{request=new WebInspector.TimelineModel.NetworkRequest(e);requests.set(id,request);if(request.startTime)
-requestsList.push(request);else
-zeroStartRequestsList.push(request);}}
-return zeroStartRequestsList.concat(requestsList);},}
-WebInspector.TimelineModel.isVisible=function(filters,event)
-{for(var i=0;i<filters.length;++i){if(!filters[i].accept(event))
-return false;}
-return true;}
-WebInspector.TimelineModel.NetworkRequest=function(event)
-{this.startTime=event.name===WebInspector.TimelineModel.RecordType.ResourceSendRequest?event.startTime:0;this.endTime=Infinity;this.children=[];this.addEvent(event);}
-WebInspector.TimelineModel.NetworkRequest.prototype={addEvent:function(event)
-{this.children.push(event);var recordType=WebInspector.TimelineModel.RecordType;this.startTime=Math.min(this.startTime,event.startTime);var eventData=event.args["data"];if(eventData["mimeType"])
-this.mimeType=eventData["mimeType"];if("priority"in eventData)
-this.priority=eventData["priority"];if(event.name===recordType.ResourceFinish)
-this.endTime=event.startTime;if(!this.responseTime&&(event.name===recordType.ResourceReceiveResponse||event.name===recordType.ResourceReceivedData))
-this.responseTime=event.startTime;if(!this.url)
-this.url=eventData["url"];if(!this.requestMethod)
-this.requestMethod=eventData["requestMethod"];}}
-WebInspector.TimelineModel.Filter=function()
-{}
-WebInspector.TimelineModel.Filter.prototype={accept:function(event)
-{return true;}}
-WebInspector.TimelineVisibleEventsFilter=function(visibleTypes)
-{WebInspector.TimelineModel.Filter.call(this);this._visibleTypes=new Set(visibleTypes);}
-WebInspector.TimelineVisibleEventsFilter.prototype={accept:function(event)
-{return this._visibleTypes.has(WebInspector.TimelineModel._eventType(event));},__proto__:WebInspector.TimelineModel.Filter.prototype}
-WebInspector.ExclusiveNameFilter=function(excludeNames)
-{WebInspector.TimelineModel.Filter.call(this);this._excludeNames=new Set(excludeNames);}
-WebInspector.ExclusiveNameFilter.prototype={accept:function(event)
-{return!this._excludeNames.has(event.name);},__proto__:WebInspector.TimelineModel.Filter.prototype}
-WebInspector.ExcludeTopLevelFilter=function()
-{WebInspector.TimelineModel.Filter.call(this);}
-WebInspector.ExcludeTopLevelFilter.prototype={accept:function(event)
-{return!WebInspector.TracingModel.isTopLevelEvent(event);},__proto__:WebInspector.TimelineModel.Filter.prototype}
-WebInspector.InvalidationTrackingEvent=function(event)
-{this.type=event.name;this.startTime=event.startTime;this._tracingEvent=event;var eventData=event.args["data"];this.frame=eventData["frame"];this.nodeId=eventData["nodeId"];this.nodeName=eventData["nodeName"];this.paintId=eventData["paintId"];this.invalidationSet=eventData["invalidationSet"];this.invalidatedSelectorId=eventData["invalidatedSelectorId"];this.changedId=eventData["changedId"];this.changedClass=eventData["changedClass"];this.changedAttribute=eventData["changedAttribute"];this.changedPseudo=eventData["changedPseudo"];this.selectorPart=eventData["selectorPart"];this.extraData=eventData["extraData"];this.invalidationList=eventData["invalidationList"];this.cause={reason:eventData["reason"],stackTrace:eventData["stackTrace"]};if(!this.cause.reason&&this.cause.stackTrace&&this.type===WebInspector.TimelineModel.RecordType.LayoutInvalidationTracking)
-this.cause.reason="Layout forced";}
-WebInspector.InvalidationCause;WebInspector.InvalidationTracker=function()
-{this._initializePerFrameState();}
-WebInspector.InvalidationTracker.prototype={addInvalidation:function(invalidation)
-{this._startNewFrameIfNeeded();if(!invalidation.nodeId&&!invalidation.paintId){console.error("Invalidation lacks node information.");console.error(invalidation);return;}
-var recordTypes=WebInspector.TimelineModel.RecordType;if(invalidation.type===recordTypes.PaintInvalidationTracking&&invalidation.nodeId){var invalidations=this._invalidationsByNodeId[invalidation.nodeId]||[];for(var i=0;i<invalidations.length;++i)
-invalidations[i].paintId=invalidation.paintId;return;}
-if(invalidation.type===recordTypes.StyleRecalcInvalidationTracking&&invalidation.cause.reason==="StyleInvalidator")
-return;var styleRecalcInvalidation=(invalidation.type===recordTypes.ScheduleStyleInvalidationTracking||invalidation.type===recordTypes.StyleInvalidatorInvalidationTracking||invalidation.type===recordTypes.StyleRecalcInvalidationTracking);if(styleRecalcInvalidation){var duringRecalcStyle=invalidation.startTime&&this._lastRecalcStyle&&invalidation.startTime>=this._lastRecalcStyle.startTime&&invalidation.startTime<=this._lastRecalcStyle.endTime;if(duringRecalcStyle)
-this._associateWithLastRecalcStyleEvent(invalidation);}
-if(this._invalidations[invalidation.type])
-this._invalidations[invalidation.type].push(invalidation);else
-this._invalidations[invalidation.type]=[invalidation];if(invalidation.nodeId){if(this._invalidationsByNodeId[invalidation.nodeId])
-this._invalidationsByNodeId[invalidation.nodeId].push(invalidation);else
-this._invalidationsByNodeId[invalidation.nodeId]=[invalidation];}},didRecalcStyle:function(recalcStyleEvent)
-{this._lastRecalcStyle=recalcStyleEvent;var types=[WebInspector.TimelineModel.RecordType.ScheduleStyleInvalidationTracking,WebInspector.TimelineModel.RecordType.StyleInvalidatorInvalidationTracking,WebInspector.TimelineModel.RecordType.StyleRecalcInvalidationTracking];for(var invalidation of this._invalidationsOfTypes(types))
-this._associateWithLastRecalcStyleEvent(invalidation);},_associateWithLastRecalcStyleEvent:function(invalidation)
-{if(invalidation.linkedRecalcStyleEvent)
-return;var recordTypes=WebInspector.TimelineModel.RecordType;var recalcStyleFrameId=this._lastRecalcStyle.args["beginData"]["frame"];if(invalidation.type===recordTypes.StyleInvalidatorInvalidationTracking){this._addSyntheticStyleRecalcInvalidations(this._lastRecalcStyle,recalcStyleFrameId,invalidation);}else if(invalidation.type===recordTypes.ScheduleStyleInvalidationTracking){}else{this._addInvalidationToEvent(this._lastRecalcStyle,recalcStyleFrameId,invalidation);}
-invalidation.linkedRecalcStyleEvent=true;},_addSyntheticStyleRecalcInvalidations:function(event,frameId,styleInvalidatorInvalidation)
-{if(!styleInvalidatorInvalidation.invalidationList){this._addSyntheticStyleRecalcInvalidation(styleInvalidatorInvalidation._tracingEvent,styleInvalidatorInvalidation);return;}
-if(!styleInvalidatorInvalidation.nodeId){console.error("Invalidation lacks node information.");console.error(invalidation);return;}
-for(var i=0;i<styleInvalidatorInvalidation.invalidationList.length;i++){var setId=styleInvalidatorInvalidation.invalidationList[i]["id"];var lastScheduleStyleRecalculation;var nodeInvalidations=this._invalidationsByNodeId[styleInvalidatorInvalidation.nodeId]||[];for(var j=0;j<nodeInvalidations.length;j++){var invalidation=nodeInvalidations[j];if(invalidation.frame!==frameId||invalidation.invalidationSet!==setId||invalidation.type!==WebInspector.TimelineModel.RecordType.ScheduleStyleInvalidationTracking)
-continue;lastScheduleStyleRecalculation=invalidation;}
-if(!lastScheduleStyleRecalculation){console.error("Failed to lookup the event that scheduled a style invalidator invalidation.");continue;}
-this._addSyntheticStyleRecalcInvalidation(lastScheduleStyleRecalculation._tracingEvent,styleInvalidatorInvalidation);}},_addSyntheticStyleRecalcInvalidation:function(baseEvent,styleInvalidatorInvalidation)
-{var invalidation=new WebInspector.InvalidationTrackingEvent(baseEvent);invalidation.type=WebInspector.TimelineModel.RecordType.StyleRecalcInvalidationTracking;invalidation.synthetic=true;if(styleInvalidatorInvalidation.cause.reason)
-invalidation.cause.reason=styleInvalidatorInvalidation.cause.reason;if(styleInvalidatorInvalidation.selectorPart)
-invalidation.selectorPart=styleInvalidatorInvalidation.selectorPart;this.addInvalidation(invalidation);if(!invalidation.linkedRecalcStyleEvent)
-this._associateWithLastRecalcStyleEvent(invalidation);},didLayout:function(layoutEvent)
-{var layoutFrameId=layoutEvent.args["beginData"]["frame"];for(var invalidation of this._invalidationsOfTypes([WebInspector.TimelineModel.RecordType.LayoutInvalidationTracking])){if(invalidation.linkedLayoutEvent)
-continue;this._addInvalidationToEvent(layoutEvent,layoutFrameId,invalidation);invalidation.linkedLayoutEvent=true;}},didPaint:function(paintEvent)
-{this._didPaint=true;var layerId=paintEvent.args["data"]["layerId"];if(layerId)
-this._lastPaintWithLayer=paintEvent;if(!this._lastPaintWithLayer){console.error("Failed to find a paint container for a paint event.");return;}
-var effectivePaintId=this._lastPaintWithLayer.args["data"]["nodeId"];var paintFrameId=paintEvent.args["data"]["frame"];var types=[WebInspector.TimelineModel.RecordType.StyleRecalcInvalidationTracking,WebInspector.TimelineModel.RecordType.LayoutInvalidationTracking,WebInspector.TimelineModel.RecordType.PaintInvalidationTracking,WebInspector.TimelineModel.RecordType.ScrollInvalidationTracking];for(var invalidation of this._invalidationsOfTypes(types)){if(invalidation.paintId===effectivePaintId)
-this._addInvalidationToEvent(paintEvent,paintFrameId,invalidation);}},_addInvalidationToEvent:function(event,eventFrameId,invalidation)
-{if(eventFrameId!==invalidation.frame)
-return;if(!event.invalidationTrackingEvents)
-event.invalidationTrackingEvents=[invalidation];else
-event.invalidationTrackingEvents.push(invalidation);},_invalidationsOfTypes:function(types)
-{var invalidations=this._invalidations;if(!types)
-types=Object.keys(invalidations);function*generator()
-{for(var i=0;i<types.length;++i){var invalidationList=invalidations[types[i]]||[];for(var j=0;j<invalidationList.length;++j)
-yield invalidationList[j];}}
-return generator();},_startNewFrameIfNeeded:function()
-{if(!this._didPaint)
-return;this._initializePerFrameState();},_initializePerFrameState:function()
-{this._invalidations={};this._invalidationsByNodeId={};this._lastRecalcStyle=undefined;this._lastPaintWithLayer=undefined;this._didPaint=false;}}
-WebInspector.TimelineAsyncEventTracker=function()
-{WebInspector.TimelineAsyncEventTracker._initialize();this._initiatorByType=new Map();for(var initiator of WebInspector.TimelineAsyncEventTracker._asyncEvents.keys())
-this._initiatorByType.set(initiator,new Map());}
-WebInspector.TimelineAsyncEventTracker._initialize=function()
-{if(WebInspector.TimelineAsyncEventTracker._asyncEvents)
-return;var events=new Map();var type=WebInspector.TimelineModel.RecordType;events.set(type.TimerInstall,{causes:[type.TimerFire],joinBy:"timerId"});events.set(type.ResourceSendRequest,{causes:[type.ResourceReceiveResponse,type.ResourceReceivedData,type.ResourceFinish],joinBy:"requestId"});events.set(type.RequestAnimationFrame,{causes:[type.FireAnimationFrame],joinBy:"id"});events.set(type.RequestIdleCallback,{causes:[type.FireIdleCallback],joinBy:"id"});events.set(type.WebSocketCreate,{causes:[type.WebSocketSendHandshakeRequest,type.WebSocketReceiveHandshakeResponse,type.WebSocketDestroy],joinBy:"identifier"});WebInspector.TimelineAsyncEventTracker._asyncEvents=events;WebInspector.TimelineAsyncEventTracker._typeToInitiator=new Map();for(var entry of events){var types=entry[1].causes;for(type of types)
-WebInspector.TimelineAsyncEventTracker._typeToInitiator.set(type,entry[0]);}}
-WebInspector.TimelineAsyncEventTracker.prototype={processEvent:function(event)
-{var initiatorType=WebInspector.TimelineAsyncEventTracker._typeToInitiator.get((event.name));var isInitiator=!initiatorType;if(!initiatorType)
-initiatorType=(event.name);var initiatorInfo=WebInspector.TimelineAsyncEventTracker._asyncEvents.get(initiatorType);if(!initiatorInfo)
-return;var id=event.args["data"][initiatorInfo.joinBy];if(!id)
-return;var initiatorMap=this._initiatorByType.get(initiatorType);if(isInitiator)
-initiatorMap.set(id,event);else
-event.initiator=initiatorMap.get(id)||null;}};WebInspector.TimelineIRModel=function()
-{this.reset();}
-WebInspector.TimelineIRModel.Phases={Idle:"Idle",Response:"Response",Scroll:"Scroll",Fling:"Fling",Drag:"Drag",Animation:"Animation",Uncategorized:"Uncategorized"};WebInspector.TimelineIRModel.InputEvents={Char:"Char",Click:"GestureClick",ContextMenu:"ContextMenu",FlingCancel:"GestureFlingCancel",FlingStart:"GestureFlingStart",ImplSideFling:WebInspector.TimelineModel.RecordType.ImplSideFling,KeyDown:"KeyDown",KeyDownRaw:"RawKeyDown",KeyUp:"KeyUp",LatencyScrollUpdate:"ScrollUpdate",MouseDown:"MouseDown",MouseMove:"MouseMove",MouseUp:"MouseUp",MouseWheel:"MouseWheel",PinchBegin:"GesturePinchBegin",PinchEnd:"GesturePinchEnd",PinchUpdate:"GesturePinchUpdate",ScrollBegin:"GestureScrollBegin",ScrollEnd:"GestureScrollEnd",ScrollUpdate:"GestureScrollUpdate",ScrollUpdateRenderer:"ScrollUpdate",ShowPress:"GestureShowPress",Tap:"GestureTap",TapCancel:"GestureTapCancel",TapDown:"GestureTapDown",TouchCancel:"TouchCancel",TouchEnd:"TouchEnd",TouchMove:"TouchMove",TouchStart:"TouchStart"};WebInspector.TimelineIRModel._mergeThresholdsMs={animation:1,mouse:40,};WebInspector.TimelineIRModel._eventIRPhase=Symbol("eventIRPhase");WebInspector.TimelineIRModel.phaseForEvent=function(event)
-{return event[WebInspector.TimelineIRModel._eventIRPhase];}
-WebInspector.TimelineIRModel.prototype={populate:function(timelineModel)
-{var eventTypes=WebInspector.TimelineIRModel.InputEvents;var phases=WebInspector.TimelineIRModel.Phases;this.reset();var groups=WebInspector.TimelineUIUtils.asyncEventGroups();var asyncEventsByGroup=timelineModel.mainThreadAsyncEvents();var inputLatencies=asyncEventsByGroup.get(groups.input);if(!inputLatencies)
-return;this._processInputLatencies(inputLatencies);var animations=asyncEventsByGroup.get(groups.animation);if(animations)
-this._processAnimations(animations);var range=new WebInspector.SegmentedRange();range.appendRange(this._drags);range.appendRange(this._cssAnimations);range.appendRange(this._scrolls);range.appendRange(this._responses);this._segments=range.segments();},_processInputLatencies:function(events)
-{var eventTypes=WebInspector.TimelineIRModel.InputEvents;var phases=WebInspector.TimelineIRModel.Phases;var thresholdsMs=WebInspector.TimelineIRModel._mergeThresholdsMs;var scrollStart;var flingStart;var touchStart;var firstTouchMove;var mouseWheel;var mouseDown;var mouseMove;for(var i=0;i<events.length;++i){var event=events[i];if(i>0&&events[i].startTime<events[i-1].startTime)
-console.assert(false,"Unordered input events");var type=this._inputEventType(event.name);switch(type){case eventTypes.ScrollBegin:this._scrolls.append(this._segmentForEvent(event,phases.Scroll));scrollStart=event;break;case eventTypes.ScrollEnd:if(scrollStart)
-this._scrolls.append(this._segmentForEventRange(scrollStart,event,phases.Scroll));else
-this._scrolls.append(this._segmentForEvent(event,phases.Scroll));scrollStart=null;break;case eventTypes.ScrollUpdate:touchStart=null;this._scrolls.append(this._segmentForEvent(event,phases.Scroll));break;case eventTypes.FlingStart:if(flingStart){WebInspector.console.error(WebInspector.UIString("Two flings at the same time? %s vs %s",flingStart.startTime,event.startTime));break;}
-flingStart=event;break;case eventTypes.FlingCancel:if(!flingStart)
-break;this._scrolls.append(this._segmentForEventRange(flingStart,event,phases.Fling));flingStart=null;break;case eventTypes.ImplSideFling:this._scrolls.append(this._segmentForEvent(event,phases.Fling));break;case eventTypes.ShowPress:case eventTypes.Tap:case eventTypes.KeyDown:case eventTypes.KeyDownRaw:case eventTypes.KeyUp:case eventTypes.Char:case eventTypes.Click:case eventTypes.ContextMenu:this._responses.append(this._segmentForEvent(event,phases.Response));break;case eventTypes.TouchStart:if(touchStart){WebInspector.console.error(WebInspector.UIString("Two touches at the same time? %s vs %s",touchStart.startTime,event.startTime));break;}
-touchStart=event;event.steps[0][WebInspector.TimelineIRModel._eventIRPhase]=phases.Response;firstTouchMove=null;break;case eventTypes.TouchCancel:touchStart=null;break;case eventTypes.TouchMove:if(firstTouchMove){this._drags.append(this._segmentForEvent(event,phases.Drag));}else if(touchStart){firstTouchMove=event;this._responses.append(this._segmentForEventRange(touchStart,event,phases.Response));}
-break;case eventTypes.TouchEnd:touchStart=null;break;case eventTypes.MouseDown:mouseDown=event;mouseMove=null;break;case eventTypes.MouseMove:if(mouseDown&&!mouseMove&&mouseDown.startTime+thresholdsMs.mouse>event.startTime){this._responses.append(this._segmentForEvent(mouseDown,phases.Response));this._responses.append(this._segmentForEvent(event,phases.Response));}else if(mouseDown){this._drags.append(this._segmentForEvent(event,phases.Drag));}
-mouseMove=event;break;case eventTypes.MouseUp:this._responses.append(this._segmentForEvent(event,phases.Response));mouseDown=null;break;case eventTypes.MouseWheel:if(mouseWheel&&canMerge(thresholdsMs.mouse,mouseWheel,event))
-this._scrolls.append(this._segmentForEventRange(mouseWheel,event,phases.Scroll));else
-this._scrolls.append(this._segmentForEvent(event,phases.Scroll));mouseWheel=event;break;}}
-function canMerge(threshold,first,second)
-{return first.endTime<second.startTime&&second.startTime<first.endTime+threshold;}},_processAnimations:function(events)
-{for(var i=0;i<events.length;++i)
-this._cssAnimations.append(this._segmentForEvent(events[i],WebInspector.TimelineIRModel.Phases.Animation));},_segmentForEvent:function(event,phase)
-{this._setPhaseForEvent(event,phase);return new WebInspector.Segment(event.startTime,event.endTime,phase);},_segmentForEventRange:function(startEvent,endEvent,phase)
-{this._setPhaseForEvent(startEvent,phase);this._setPhaseForEvent(endEvent,phase);return new WebInspector.Segment(startEvent.startTime,endEvent.endTime,phase);},_setPhaseForEvent:function(asyncEvent,phase)
-{asyncEvent.steps[0][WebInspector.TimelineIRModel._eventIRPhase]=phase;},interactionRecords:function()
-{return this._segments;},reset:function()
-{var thresholdsMs=WebInspector.TimelineIRModel._mergeThresholdsMs;this._segments=[];this._drags=new WebInspector.SegmentedRange(merge.bind(null,thresholdsMs.mouse));this._cssAnimations=new WebInspector.SegmentedRange(merge.bind(null,thresholdsMs.animation));this._responses=new WebInspector.SegmentedRange(merge.bind(null,0));this._scrolls=new WebInspector.SegmentedRange(merge.bind(null,thresholdsMs.animation));function merge(threshold,first,second)
-{return first.end+threshold>=second.begin&&first.data===second.data?first:null;}},_inputEventType:function(eventName)
-{var prefix="InputLatency::";if(!eventName.startsWith(prefix)){if(eventName===WebInspector.TimelineIRModel.InputEvents.ImplSideFling)
-return(eventName);console.error("Unrecognized input latency event: "+eventName);return null;}
-return(eventName.substr(prefix.length));}};;WebInspector.TimelineJSProfileProcessor={};WebInspector.TimelineJSProfileProcessor.generateTracingEventsFromCpuProfile=function(jsProfileModel,thread)
-{var idleNode=jsProfileModel.idleNode;var programNode=jsProfileModel.programNode;var gcNode=jsProfileModel.gcNode;var samples=jsProfileModel.samples;var timestamps=jsProfileModel.timestamps;var jsEvents=[];var nodeToStackMap=new Map();nodeToStackMap.set(programNode,[]);for(var i=0;i<samples.length;++i){var node=jsProfileModel.nodeByIndex(i);if(!node){console.error(`Node with unknown id ${samples[i]}at index ${i}`);continue;}
-if(node===gcNode||node===idleNode)
-continue;var callFrames=nodeToStackMap.get(node);if(!callFrames){callFrames=(new Array(node.depth+1));nodeToStackMap.set(node,callFrames);for(var j=0;node.parent;node=node.parent)
-callFrames[j++]=(node);}
-var jsSampleEvent=new WebInspector.TracingModel.Event(WebInspector.TracingModel.DevToolsTimelineEventCategory,WebInspector.TimelineModel.RecordType.JSSample,WebInspector.TracingModel.Phase.Instant,timestamps[i],thread);jsSampleEvent.args["data"]={stackTrace:callFrames};jsEvents.push(jsSampleEvent);}
-return jsEvents;}
-WebInspector.TimelineJSProfileProcessor.generateJSFrameEvents=function(events)
-{function equalFrames(frame1,frame2)
-{return frame1.scriptId===frame2.scriptId&&frame1.functionName===frame2.functionName;}
-function eventEndTime(e)
-{return e.endTime||e.startTime;}
-function isJSInvocationEvent(e)
-{switch(e.name){case WebInspector.TimelineModel.RecordType.FunctionCall:case WebInspector.TimelineModel.RecordType.EvaluateScript:return true;}
-return false;}
-var jsFrameEvents=[];var jsFramesStack=[];var lockedJsStackDepth=[];var ordinal=0;var filterNativeFunctions=!WebInspector.moduleSetting("showNativeFunctionsInJSProfile").get();function onStartEvent(e)
-{e.ordinal=++ordinal;extractStackTrace(e);lockedJsStackDepth.push(jsFramesStack.length);}
-function onInstantEvent(e,parent)
-{e.ordinal=++ordinal;if(parent&&isJSInvocationEvent(parent))
-extractStackTrace(e);}
-function onEndEvent(e)
-{truncateJSStack(lockedJsStackDepth.pop(),e.endTime);}
-function truncateJSStack(depth,time)
-{if(lockedJsStackDepth.length){var lockedDepth=lockedJsStackDepth.peekLast();if(depth<lockedDepth){console.error("Child stack is shallower ("+depth+") than the parent stack ("+lockedDepth+") at "+time);depth=lockedDepth;}}
-if(jsFramesStack.length<depth){console.error("Trying to truncate higher than the current stack size at "+time);depth=jsFramesStack.length;}
-for(var k=0;k<jsFramesStack.length;++k)
-jsFramesStack[k].setEndTime(time);jsFramesStack.length=depth;}
-function filterStackFrames(stack)
-{for(var i=0,j=0;i<stack.length;++i){var url=stack[i].url;if(url&&url.startsWith("native "))
-continue;stack[j++]=stack[i];}
-stack.length=j;}
-function extractStackTrace(e)
-{var recordTypes=WebInspector.TimelineModel.RecordType;var callFrames;if(e.name===recordTypes.JSSample){var eventData=e.args["data"]||e.args["beginData"];callFrames=(eventData&&eventData["stackTrace"]);}else{callFrames=(jsFramesStack.map(frameEvent=>frameEvent.args["data"]).reverse());}
-if(filterNativeFunctions)
-filterStackFrames(callFrames);var endTime=eventEndTime(e);var numFrames=callFrames.length;var minFrames=Math.min(numFrames,jsFramesStack.length);var i;for(i=lockedJsStackDepth.peekLast()||0;i<minFrames;++i){var newFrame=callFrames[numFrames-1-i];var oldFrame=jsFramesStack[i].args["data"];if(!equalFrames(newFrame,oldFrame))
-break;jsFramesStack[i].setEndTime(Math.max(jsFramesStack[i].endTime,endTime));}
-truncateJSStack(i,e.startTime);for(;i<numFrames;++i){var frame=callFrames[numFrames-1-i];var jsFrameEvent=new WebInspector.TracingModel.Event(WebInspector.TracingModel.DevToolsTimelineEventCategory,recordTypes.JSFrame,WebInspector.TracingModel.Phase.Complete,e.startTime,e.thread);jsFrameEvent.ordinal=e.ordinal;jsFrameEvent.addArgs({data:frame});jsFrameEvent.setEndTime(endTime);jsFramesStack.push(jsFrameEvent);jsFrameEvents.push(jsFrameEvent);}}
-function findFirstTopLevelEvent(events)
-{for(var i=0;i<events.length;++i){if(WebInspector.TracingModel.isTopLevelEvent(events[i]))
-return events[i];}
-return null;}
-var firstTopLevelEvent=findFirstTopLevelEvent(events);if(firstTopLevelEvent)
-WebInspector.TimelineModel.forEachEvent(events,onStartEvent,onEndEvent,onInstantEvent,firstTopLevelEvent.startTime);return jsFrameEvents;}
-WebInspector.TimelineJSProfileProcessor.CodeMap=function()
-{this._banks=new Map();}
-WebInspector.TimelineJSProfileProcessor.CodeMap.Entry=function(address,size,callFrame)
-{this.address=address;this.size=size;this.callFrame=callFrame;}
-WebInspector.TimelineJSProfileProcessor.CodeMap.comparator=function(address,entry)
-{return address-entry.address;}
-WebInspector.TimelineJSProfileProcessor.CodeMap.prototype={addEntry:function(addressHex,size,callFrame)
-{var entry=new WebInspector.TimelineJSProfileProcessor.CodeMap.Entry(this._getAddress(addressHex),size,callFrame);this._addEntry(addressHex,entry);},moveEntry:function(oldAddressHex,newAddressHex,size)
-{var entry=this._getBank(oldAddressHex).removeEntry(this._getAddress(oldAddressHex));if(!entry){console.error("Entry at address "+oldAddressHex+" not found");return;}
-entry.address=this._getAddress(newAddressHex);entry.size=size;this._addEntry(newAddressHex,entry);},lookupEntry:function(addressHex)
-{return this._getBank(addressHex).lookupEntry(this._getAddress(addressHex));},_addEntry:function(addressHex,entry)
-{this._getBank(addressHex).addEntry(entry);},_getBank:function(addressHex)
-{addressHex=addressHex.slice(2);var bankSizeHexDigits=13;var maxHexDigits=16;var bankName=addressHex.slice(-maxHexDigits,-bankSizeHexDigits);var bank=this._banks.get(bankName);if(!bank){bank=new WebInspector.TimelineJSProfileProcessor.CodeMap.Bank();this._banks.set(bankName,bank);}
-return bank;},_getAddress:function(addressHex)
-{var bankSizeHexDigits=13;addressHex=addressHex.slice(2);return parseInt(addressHex.slice(-bankSizeHexDigits),16);}}
-WebInspector.TimelineJSProfileProcessor.CodeMap.Bank=function()
-{this._entries=[];}
-WebInspector.TimelineJSProfileProcessor.CodeMap.Bank.prototype={removeEntry:function(address)
-{var index=this._entries.lowerBound(address,WebInspector.TimelineJSProfileProcessor.CodeMap.comparator);var entry=this._entries[index];if(!entry||entry.address!==address)
-return null;this._entries.splice(index,1);return entry;},lookupEntry:function(address)
-{var index=this._entries.upperBound(address,WebInspector.TimelineJSProfileProcessor.CodeMap.comparator)-1;var entry=this._entries[index];return entry&&address<entry.address+entry.size?entry.callFrame:null;},addEntry:function(newEntry)
-{var endAddress=newEntry.address+newEntry.size;var lastIndex=this._entries.lowerBound(endAddress,WebInspector.TimelineJSProfileProcessor.CodeMap.comparator);var index;for(index=lastIndex-1;index>=0;--index){var entry=this._entries[index];var entryEndAddress=entry.address+entry.size;if(entryEndAddress<=newEntry.address)
-break;}
-++index;this._entries.splice(index,lastIndex-index,newEntry);}}
-WebInspector.TimelineJSProfileProcessor._buildCallFrame=function(name,scriptId)
-{function createFrame(functionName,url,scriptId,line,column,isNative)
-{return({"functionName":functionName,"url":url||"","scriptId":scriptId||"0","lineNumber":line||0,"columnNumber":column||0,"isNative":isNative||false});}
-var rePrefix=/^(\w*:)?[*~]?(.*)$/m;var tokens=rePrefix.exec(name);var prefix=tokens[1];var body=tokens[2];var rawName;var rawUrl;if(prefix==="Script:"){rawName="";rawUrl=body;}else{var spacePos=body.lastIndexOf(" ");rawName=spacePos!==-1?body.substr(0,spacePos):body;rawUrl=spacePos!==-1?body.substr(spacePos+1):"";}
-var nativeSuffix=" native";var isNative=rawName.endsWith(nativeSuffix);var functionName=isNative?rawName.slice(0,-nativeSuffix.length):rawName;var urlData=WebInspector.ParsedURL.splitLineAndColumn(rawUrl);var url=urlData.url||"";var line=urlData.lineNumber||0;var column=urlData.columnNumber||0;return createFrame(functionName,url,String(scriptId),line,column,isNative);}
-WebInspector.TimelineJSProfileProcessor.processRawV8Samples=function(events)
-{var missingAddesses=new Set();function convertRawFrame(address)
-{var entry=codeMap.lookupEntry(address);if(entry)
-return entry.isNative?null:entry;if(!missingAddesses.has(address)){missingAddesses.add(address);console.error("Address "+address+" has missing code entry");}
-return null;}
-var recordTypes=WebInspector.TimelineModel.RecordType;var samples=[];var codeMap=new WebInspector.TimelineJSProfileProcessor.CodeMap();for(var i=0;i<events.length;++i){var e=events[i];var data=e.args["data"];switch(e.name){case recordTypes.JitCodeAdded:var frame=WebInspector.TimelineJSProfileProcessor._buildCallFrame(data["name"],data["script_id"]);codeMap.addEntry(data["code_start"],data["code_len"],frame);break;case recordTypes.JitCodeMoved:codeMap.moveEntry(data["code_start"],data["new_code_start"],data["code_len"]);break;case recordTypes.V8Sample:var rawStack=data["stack"];if(data["vm_state"]==="js"&&!rawStack.length)
-break;var stack=rawStack.map(convertRawFrame);stack.remove(null);var sampleEvent=new WebInspector.TracingModel.Event(WebInspector.TracingModel.DevToolsTimelineEventCategory,WebInspector.TimelineModel.RecordType.JSSample,WebInspector.TracingModel.Phase.Instant,e.startTime,e.thread);sampleEvent.ordinal=e.ordinal;sampleEvent.args={"data":{"stackTrace":stack}};samples.push(sampleEvent);break;}}
-return samples;};WebInspector.TimelineLoader=function(model,delegate)
+{this._delegate.loadingProgress(progress);}};WebInspector.TimelineLoader=function(model,delegate)
 {this._model=model;this._delegate=delegate;this._canceledCallback=null;this._state=WebInspector.TimelineLoader.State.Initial;this._buffer="";this._firstChunk=true;this._loadedBytes=0;this._totalSize;this._jsonTokenizer=new WebInspector.TextUtils.BalancedJSONTokenizer(this._writeBalancedJSON.bind(this),true);}
 WebInspector.TimelineLoader.loadFromFile=function(model,file,delegate)
 {var loader=new WebInspector.TimelineLoader(model,delegate);var fileReader=WebInspector.TimelineLoader._createFileReader(file,loader);loader._canceledCallback=fileReader.cancel.bind(fileReader);loader._totalSize=file.size;fileReader.start(loader);return loader;}
@@ -939,116 +395,7 @@ this._delegate.loadingComplete(true);},onTransferStarted:function(){},onChunkTra
 WebInspector.TracingTimelineSaver=function()
 {}
 WebInspector.TracingTimelineSaver.prototype={onTransferStarted:function(){},onTransferFinished:function(){},onChunkTransferred:function(reader){},onError:function(reader,event)
-{var error=event.target.error;WebInspector.console.error(WebInspector.UIString("Failed to save timeline: %s (%s, %s)",error.message,error.name,error.code));}};WebInspector.TimelineFrameModel=function()
-{this.reset();}
-WebInspector.TimelineFrameModel._mainFrameMarkers=[WebInspector.TimelineModel.RecordType.ScheduleStyleRecalculation,WebInspector.TimelineModel.RecordType.InvalidateLayout,WebInspector.TimelineModel.RecordType.BeginMainThreadFrame,WebInspector.TimelineModel.RecordType.ScrollLayer];WebInspector.TimelineFrameModel.prototype={frames:function()
-{return this._frames;},filteredFrames:function(startTime,endTime)
-{function compareStartTime(value,object)
-{return value-object.startTime;}
-function compareEndTime(value,object)
-{return value-object.endTime;}
-var frames=this._frames;var firstFrame=frames.lowerBound(startTime,compareEndTime);var lastFrame=frames.lowerBound(endTime,compareStartTime);return frames.slice(firstFrame,lastFrame);},hasRasterTile:function(rasterTask)
-{var data=rasterTask.args["tileData"];if(!data)
-return false;var frameId=data["sourceFrameNumber"];var frame=frameId&&this._frameById[frameId];if(!frame||!frame.layerTree)
-return false;return true;},requestRasterTile:function(rasterTask,callback)
-{var target=this._target;if(!target){callback(null,null);return;}
-var data=rasterTask.args["tileData"];var frameId=data["sourceFrameNumber"];var frame=frameId&&this._frameById[frameId];if(!frame||!frame.layerTree){callback(null,null);return;}
-var tileId=data["tileId"]&&data["tileId"]["id_ref"];var fragments=[];var tile=null;var x0=Infinity;var y0=Infinity;frame.layerTree.resolve(layerTreeResolved);function layerTreeResolved(layerTree)
-{tile=tileId&&((layerTree)).tileById("cc::Tile/"+tileId);if(!tile){console.error("Tile "+tileId+" missing in frame "+frameId);callback(null,null);return;}
-var fetchPictureFragmentsBarrier=new CallbackBarrier();for(var paint of frame.paints){if(tile.layer_id===paint.layerId())
-paint.loadPicture(fetchPictureFragmentsBarrier.createCallback(pictureLoaded));}
-fetchPictureFragmentsBarrier.callWhenDone(allPicturesLoaded);}
-function segmentsOverlap(a1,a2,b1,b2)
-{console.assert(a1<=a2&&b1<=b2,"segments should be specified as ordered pairs");return a2>b1&&a1<b2;}
-function rectsOverlap(a,b)
-{return segmentsOverlap(a[0],a[0]+a[2],b[0],b[0]+b[2])&&segmentsOverlap(a[1],a[1]+a[3],b[1],b[1]+b[3]);}
-function pictureLoaded(rect,picture)
-{if(!rect||!picture)
-return;if(!rectsOverlap(rect,tile.content_rect))
-return;var x=rect[0];var y=rect[1];x0=Math.min(x0,x);y0=Math.min(y0,y);fragments.push({x:x,y:y,picture:picture});}
-function allPicturesLoaded()
-{if(!fragments.length){callback(null,null);return;}
-var rectArray=tile.content_rect;var rect={x:rectArray[0]-x0,y:rectArray[1]-y0,width:rectArray[2],height:rectArray[3]};WebInspector.PaintProfilerSnapshot.loadFromFragments(target,fragments,callback.bind(null,rect));}},reset:function()
-{this._minimumRecordTime=Infinity;this._frames=[];this._frameById={};this._lastFrame=null;this._lastLayerTree=null;this._mainFrameCommitted=false;this._mainFrameRequested=false;this._framePendingCommit=null;this._lastBeginFrame=null;this._lastNeedsBeginFrame=null;this._framePendingActivation=null;this._lastTaskBeginTime=null;this._target=null;this._sessionId=null;this._currentTaskTimeByCategory={};},handleBeginFrame:function(startTime)
-{if(!this._lastFrame)
-this._startFrame(startTime);this._lastBeginFrame=startTime;},handleDrawFrame:function(startTime)
-{if(!this._lastFrame){this._startFrame(startTime);return;}
-if(this._mainFrameCommitted||!this._mainFrameRequested){if(this._lastNeedsBeginFrame){var idleTimeEnd=this._framePendingActivation?this._framePendingActivation.triggerTime:(this._lastBeginFrame||this._lastNeedsBeginFrame);if(idleTimeEnd>this._lastFrame.startTime){this._lastFrame.idle=true;this._startFrame(idleTimeEnd);if(this._framePendingActivation)
-this._commitPendingFrame();this._lastBeginFrame=null;}
-this._lastNeedsBeginFrame=null;}
-this._startFrame(startTime);}
-this._mainFrameCommitted=false;},handleActivateLayerTree:function()
-{if(!this._lastFrame)
-return;if(this._framePendingActivation&&!this._lastNeedsBeginFrame)
-this._commitPendingFrame();},handleRequestMainThreadFrame:function()
-{if(!this._lastFrame)
-return;this._mainFrameRequested=true;},handleCompositeLayers:function()
-{if(!this._framePendingCommit)
-return;this._framePendingActivation=this._framePendingCommit;this._framePendingCommit=null;this._mainFrameRequested=false;this._mainFrameCommitted=true;},handleLayerTreeSnapshot:function(layerTree)
-{this._lastLayerTree=layerTree;},handleNeedFrameChanged:function(startTime,needsBeginFrame)
-{if(needsBeginFrame)
-this._lastNeedsBeginFrame=startTime;},_startFrame:function(startTime)
-{if(this._lastFrame)
-this._flushFrame(this._lastFrame,startTime);this._lastFrame=new WebInspector.TimelineFrame(startTime,startTime-this._minimumRecordTime);},_flushFrame:function(frame,endTime)
-{frame._setLayerTree(this._lastLayerTree);frame._setEndTime(endTime);if(this._frames.length&&(frame.startTime!==this._frames.peekLast().endTime||frame.startTime>frame.endTime))
-console.assert(false,`Inconsistent frame time for frame ${this._frames.length}(${frame.startTime}-${frame.endTime})`);this._frames.push(frame);if(typeof frame._mainFrameId==="number")
-this._frameById[frame._mainFrameId]=frame;},_commitPendingFrame:function()
-{this._lastFrame._addTimeForCategories(this._framePendingActivation.timeByCategory);this._lastFrame.paints=this._framePendingActivation.paints;this._lastFrame._mainFrameId=this._framePendingActivation.mainFrameId;this._framePendingActivation=null;},_findRecordRecursively:function(types,record)
-{if(types.indexOf(record.type())>=0)
-return record;if(!record.children())
-return null;for(var i=0;i<record.children().length;++i){var result=this._findRecordRecursively(types,record.children()[i]);if(result)
-return result;}
-return null;},addTraceEvents:function(target,events,sessionId)
-{this._target=target;this._sessionId=sessionId;if(!events.length)
-return;if(events[0].startTime<this._minimumRecordTime)
-this._minimumRecordTime=events[0].startTime;for(var i=0;i<events.length;++i)
-this._addTraceEvent(events[i]);},_addTraceEvent:function(event)
-{var eventNames=WebInspector.TimelineModel.RecordType;if(event.name===eventNames.SetLayerTreeId){var sessionId=event.args["sessionId"]||event.args["data"]["sessionId"];if(this._sessionId===sessionId)
-this._layerTreeId=event.args["layerTreeId"]||event.args["data"]["layerTreeId"];}else if(event.name===eventNames.TracingStartedInPage){this._mainThread=event.thread;}else if(event.phase===WebInspector.TracingModel.Phase.SnapshotObject&&event.name===eventNames.LayerTreeHostImplSnapshot&&parseInt(event.id,0)===this._layerTreeId){var snapshot=(event);this.handleLayerTreeSnapshot(new WebInspector.DeferredTracingLayerTree(snapshot,this._target));}else{this._processCompositorEvents(event);if(event.thread===this._mainThread)
-this._addMainThreadTraceEvent(event);else if(this._lastFrame&&event.selfTime&&!WebInspector.TracingModel.isTopLevelEvent(event))
-this._lastFrame._addTimeForCategory(WebInspector.TimelineUIUtils.eventStyle(event).category.name,event.selfTime);}},_processCompositorEvents:function(event)
-{var eventNames=WebInspector.TimelineModel.RecordType;if(event.args["layerTreeId"]!==this._layerTreeId)
-return;var timestamp=event.startTime;if(event.name===eventNames.BeginFrame)
-this.handleBeginFrame(timestamp);else if(event.name===eventNames.DrawFrame)
-this.handleDrawFrame(timestamp);else if(event.name===eventNames.ActivateLayerTree)
-this.handleActivateLayerTree();else if(event.name===eventNames.RequestMainThreadFrame)
-this.handleRequestMainThreadFrame();else if(event.name===eventNames.NeedsBeginFrameChanged)
-this.handleNeedFrameChanged(timestamp,event.args["data"]&&event.args["data"]["needsBeginFrame"]);},_addMainThreadTraceEvent:function(event)
-{var eventNames=WebInspector.TimelineModel.RecordType;var timestamp=event.startTime;var selfTime=event.selfTime||0;if(WebInspector.TracingModel.isTopLevelEvent(event)){this._currentTaskTimeByCategory={};this._lastTaskBeginTime=event.startTime;}
-if(!this._framePendingCommit&&WebInspector.TimelineFrameModel._mainFrameMarkers.indexOf(event.name)>=0)
-this._framePendingCommit=new WebInspector.PendingFrame(this._lastTaskBeginTime||event.startTime,this._currentTaskTimeByCategory);if(!this._framePendingCommit){this._addTimeForCategory(this._currentTaskTimeByCategory,event);return;}
-this._addTimeForCategory(this._framePendingCommit.timeByCategory,event);if(event.name===eventNames.BeginMainThreadFrame&&event.args["data"]&&event.args["data"]["frameId"])
-this._framePendingCommit.mainFrameId=event.args["data"]["frameId"];if(event.name===eventNames.Paint&&event.args["data"]["layerId"]&&event.picture&&this._target)
-this._framePendingCommit.paints.push(new WebInspector.LayerPaintEvent(event,this._target));if(event.name===eventNames.CompositeLayers&&event.args["layerTreeId"]===this._layerTreeId)
-this.handleCompositeLayers();},_addTimeForCategory:function(timeByCategory,event)
-{if(!event.selfTime)
-return;var categoryName=WebInspector.TimelineUIUtils.eventStyle(event).category.name;timeByCategory[categoryName]=(timeByCategory[categoryName]||0)+event.selfTime;},}
-WebInspector.DeferredTracingLayerTree=function(snapshot,target)
-{WebInspector.DeferredLayerTree.call(this,target);this._snapshot=snapshot;}
-WebInspector.DeferredTracingLayerTree.prototype={resolve:function(callback)
-{this._snapshot.requestObject(onGotObject.bind(this));function onGotObject(result)
-{if(!result)
-return;var viewport=result["device_viewport_size"];var tiles=result["active_tiles"];var rootLayer=result["active_tree"]["root_layer"];var layerTree=new WebInspector.TracingLayerTree(this._target);layerTree.setViewportSize(viewport);layerTree.setTiles(tiles);layerTree.setLayers(rootLayer,callback.bind(null,layerTree));}},__proto__:WebInspector.DeferredLayerTree.prototype};WebInspector.TimelineFrame=function(startTime,startTimeOffset)
-{this.startTime=startTime;this.startTimeOffset=startTimeOffset;this.endTime=this.startTime;this.duration=0;this.timeByCategory={};this.cpuTime=0;this.idle=false;this.layerTree=null;this.paints=[];this._mainFrameId=undefined;}
-WebInspector.TimelineFrame.prototype={hasWarnings:function()
-{var longFrameDurationThresholdMs=22;return!this.idle&&this.duration>longFrameDurationThresholdMs;},_setEndTime:function(endTime)
-{this.endTime=endTime;this.duration=this.endTime-this.startTime;},_setLayerTree:function(layerTree)
-{this.layerTree=layerTree;},_addTimeForCategories:function(timeByCategory)
-{for(var category in timeByCategory)
-this._addTimeForCategory(category,timeByCategory[category]);},_addTimeForCategory:function(category,time)
-{this.timeByCategory[category]=(this.timeByCategory[category]||0)+time;this.cpuTime+=time;},}
-WebInspector.LayerPaintEvent=function(event,target)
-{this._event=event;this._target=target;}
-WebInspector.LayerPaintEvent.prototype={layerId:function()
-{return this._event.args["data"]["layerId"];},event:function()
-{return this._event;},loadPicture:function(callback)
-{this._event.picture.requestObject(onGotObject);function onGotObject(result)
-{if(!result||!result["skp64"]){callback(null,null);return;}
-var rect=result["params"]&&result["params"]["layer_rect"];callback(rect,result["skp64"]);}},loadSnapshot:function(callback)
-{this.loadPicture(onGotPicture.bind(this));function onGotPicture(rect,picture)
-{if(!rect||!picture||!this._target){callback(null,null);return;}
-WebInspector.PaintProfilerSnapshot.load(this._target,picture,callback.bind(null,rect));}}};WebInspector.PendingFrame=function(triggerTime,timeByCategory)
-{this.timeByCategory=timeByCategory;this.paints=[];this.mainFrameId=undefined;this.triggerTime=triggerTime;};WebInspector.TimelineEventOverview=function(id,title,model)
+{var error=event.target.error;WebInspector.console.error(WebInspector.UIString("Failed to save timeline: %s (%s, %s)",error.message,error.name,error.code));}};WebInspector.TimelineEventOverview=function(id,title,model)
 {WebInspector.TimelineOverviewBase.call(this);this.element.id="timeline-overview-"+id;this.element.classList.add("overview-strip");if(title)
 this.element.createChild("div","timeline-overview-strip-title").textContent=title;this._model=model;}
 WebInspector.TimelineEventOverview.prototype={_renderBar:function(begin,end,position,height,color)
@@ -1195,15 +542,15 @@ return"#888";else
 return WebInspector.TimelineFlameChartDataProviderBase.prototype.textColor.call(this,index);},reset:function()
 {WebInspector.TimelineFlameChartDataProviderBase.prototype.reset.call(this);this._entryData=[];this._entryTypeByLevel=[];this._entryIndexToTitle=[];this._markers=[];this._asyncColorByCategory=new Map();this._asyncColorByInteractionPhase=new Map();},timelineData:function()
 {if(this._timelineData)
-return this._timelineData;this._timelineData=new WebInspector.FlameChart.TimelineData([],[],[],[]);this._flowEventIndexById={};this._minimumBoundary=this._model.minimumRecordTime();this._timeSpan=this._model.isEmpty()?1000:this._model.maximumRecordTime()-this._minimumBoundary;this._currentLevel=0;this._appendFrameBars(this._frameModel.frames());this._appendHeader(WebInspector.UIString("Interactions"),this._interactionsHeaderLevel1);this._appendInteractionRecords();var asyncEventGroups=WebInspector.TimelineUIUtils.asyncEventGroups();var inputLatencies=this._model.mainThreadAsyncEvents().get(asyncEventGroups.input);if(inputLatencies&&inputLatencies.length)
-this._appendAsyncEventsGroup(asyncEventGroups.input.title,inputLatencies,this._interactionsHeaderLevel2);var animations=this._model.mainThreadAsyncEvents().get(asyncEventGroups.animation);if(animations&&animations.length)
-this._appendAsyncEventsGroup(asyncEventGroups.animation.title,animations,this._interactionsHeaderLevel2);var threads=this._model.virtualThreads();this._appendThreadTimelineData(WebInspector.UIString("Main"),this._model.mainThreadEvents(),this._model.mainThreadAsyncEvents(),true);var compositorThreads=threads.filter(thread=>thread.name.startsWith("CompositorTileWorker"));var otherThreads=threads.filter(thread=>!thread.name.startsWith("CompositorTileWorker"));if(compositorThreads.length){this._appendHeader(WebInspector.UIString("Raster"),this._headerLevel1);for(var i=0;i<compositorThreads.length;++i)
+return this._timelineData;this._timelineData=new WebInspector.FlameChart.TimelineData([],[],[],[]);this._flowEventIndexById={};this._minimumBoundary=this._model.minimumRecordTime();this._timeSpan=this._model.isEmpty()?1000:this._model.maximumRecordTime()-this._minimumBoundary;this._currentLevel=0;this._appendFrameBars(this._frameModel.frames());this._appendHeader(WebInspector.UIString("Interactions"),this._interactionsHeaderLevel1);this._appendInteractionRecords();var asyncEventGroups=WebInspector.TimelineModel.AsyncEventGroup;var inputLatencies=this._model.mainThreadAsyncEvents().get(asyncEventGroups.input);if(inputLatencies&&inputLatencies.length){var title=WebInspector.TimelineUIUtils.titleForAsyncEventGroup(asyncEventGroups.input);this._appendAsyncEventsGroup(title,inputLatencies,this._interactionsHeaderLevel2);}
+var animations=this._model.mainThreadAsyncEvents().get(asyncEventGroups.animation);if(animations&&animations.length){var title=WebInspector.TimelineUIUtils.titleForAsyncEventGroup(asyncEventGroups.animation);this._appendAsyncEventsGroup(title,animations,this._interactionsHeaderLevel2);}
+var threads=this._model.virtualThreads();this._appendThreadTimelineData(WebInspector.UIString("Main"),this._model.mainThreadEvents(),this._model.mainThreadAsyncEvents(),true);var compositorThreads=threads.filter(thread=>thread.name.startsWith("CompositorTileWorker"));var otherThreads=threads.filter(thread=>!thread.name.startsWith("CompositorTileWorker"));if(compositorThreads.length){this._appendHeader(WebInspector.UIString("Raster"),this._headerLevel1);for(var i=0;i<compositorThreads.length;++i)
 this._appendSyncEvents(compositorThreads[i].events,WebInspector.UIString("Rasterizer Thread %d",i),this._headerLevel2);}
 this._appendGPUEvents();otherThreads.forEach(thread=>this._appendThreadTimelineData(thread.name,thread.events,thread.asyncEventsByGroup));function compareStartTime(a,b)
 {return a.startTime()-b.startTime();}
 this._markers.sort(compareStartTime);this._timelineData.markers=this._markers;this._flowEventIndexById={};return this._timelineData;},_appendThreadTimelineData:function(threadTitle,syncEvents,asyncEvents,forceExpanded)
 {this._appendAsyncEvents(asyncEvents);this._appendSyncEvents(syncEvents,threadTitle,this._headerLevel1,forceExpanded);},_appendSyncEvents:function(events,title,style,forceExpanded)
-{var openEvents=[];var flowEventsEnabled=Runtime.experiments.isEnabled("timelineFlowEvents");var blackboxingEnabled=Runtime.experiments.isEnabled("blackboxJSFramesOnTimeline");var maxStackDepth=0;for(var i=0;i<events.length;++i){var e=events[i];if(WebInspector.TimelineUIUtils.isMarkerEvent(e))
+{var openEvents=[];var flowEventsEnabled=Runtime.experiments.isEnabled("timelineFlowEvents");var blackboxingEnabled=Runtime.experiments.isEnabled("blackboxJSFramesOnTimeline");var maxStackDepth=0;for(var i=0;i<events.length;++i){var e=events[i];if(WebInspector.TimelineModel.isMarkerEvent(e))
 this._markers.push(new WebInspector.TimelineFlameChartMarker(e.startTime,e.startTime-this._model.minimumRecordTime(),WebInspector.TimelineUIUtils.markerStyleForEvent(e)));if(!WebInspector.TracingModel.isFlowPhase(e.phase)){if(!e.endTime&&e.phase!==WebInspector.TracingModel.Phase.Instant)
 continue;if(WebInspector.TracingModel.isAsyncPhase(e.phase))
 continue;if(!this._isVisible(e))
@@ -1219,8 +566,8 @@ this._entryTypeByLevel.length=this._currentLevel+maxStackDepth;this._entryTypeBy
 {if(event.name!==WebInspector.TimelineModel.RecordType.JSFrame)
 return false;var url=event.args["data"]["url"];return url&&this._isBlackboxedURL(url);},_isBlackboxedURL:function(url)
 {return WebInspector.blackboxManager.isBlackboxedURL(url);},_appendAsyncEvents:function(asyncEvents)
-{var groups=WebInspector.TimelineUIUtils.asyncEventGroups();var groupArray=Object.values(groups);groupArray.remove(groups.animation);groupArray.remove(groups.input);for(var groupIndex=0;groupIndex<groupArray.length;++groupIndex){var group=groupArray[groupIndex];var events=asyncEvents.get(group);if(events)
-this._appendAsyncEventsGroup(group.title,events,this._headerLevel1);}},_appendAsyncEventsGroup:function(header,events,style)
+{var groups=WebInspector.TimelineModel.AsyncEventGroup;var groupArray=Object.values(groups);groupArray.remove(groups.animation);groupArray.remove(groups.input);for(var groupIndex=0;groupIndex<groupArray.length;++groupIndex){var group=groupArray[groupIndex];var events=asyncEvents.get(group);if(!events)
+continue;var title=WebInspector.TimelineUIUtils.titleForAsyncEventGroup(group);this._appendAsyncEventsGroup(title,events,this._headerLevel1);}},_appendAsyncEventsGroup:function(header,events,style)
 {var lastUsedTimeByLevel=[];var groupHeaderAppended=false;for(var i=0;i<events.length;++i){var asyncEvent=events[i];if(!this._isVisible(asyncEvent))
 continue;if(!groupHeaderAppended){this._appendHeader(header,style);groupHeaderAppended=true;}
 var startTime=asyncEvent.startTime;var level;for(level=0;level<lastUsedTimeByLevel.length&&lastUsedTimeByLevel[level]>startTime;++level){}
@@ -1232,7 +579,8 @@ this._entryTypeByLevel.length=this._currentLevel+lastUsedTimeByLevel.length;this
 {var style=WebInspector.TimelineUIUtils.markerStyleForFrame();this._entryTypeByLevel[this._currentLevel]=WebInspector.TimelineFlameChartEntryType.Frame;for(var i=0;i<frames.length;++i){this._markers.push(new WebInspector.TimelineFlameChartMarker(frames[i].startTime,frames[i].startTime-this._model.minimumRecordTime(),style));this._appendFrame(frames[i]);}
 ++this._currentLevel;},_entryType:function(entryIndex)
 {return this._entryTypeByLevel[this._timelineData.entryLevels[entryIndex]];},prepareHighlightedEntryInfo:function(entryIndex)
-{var time;var title;var warning;var type=this._entryType(entryIndex);if(type===WebInspector.TimelineFlameChartEntryType.Event){var event=(this._entryData[entryIndex]);var totalTime=event.duration;var selfTime=event.selfTime;var eps=1e-6;time=typeof totalTime==="number"&&Math.abs(totalTime-selfTime)>eps&&selfTime>eps?WebInspector.UIString("%s (self %s)",Number.millisToString(totalTime,true),Number.millisToString(selfTime,true)):Number.millisToString(totalTime,true);title=this.entryTitle(entryIndex);warning=WebInspector.TimelineUIUtils.eventWarning(event);}else if(type===WebInspector.TimelineFlameChartEntryType.Frame){var frame=(this._entryData[entryIndex]);time=WebInspector.UIString("%s ~ %.0f\u2009fps",Number.preciseMillisToString(frame.duration,1),(1000/frame.duration));title=frame.idle?WebInspector.UIString("Idle Frame"):WebInspector.UIString("Frame");if(frame.hasWarnings()){warning=createElement("span");warning.textContent=WebInspector.UIString("Long frame");}}else{return null;}
+{var time="";var title;var warning;var type=this._entryType(entryIndex);if(type===WebInspector.TimelineFlameChartEntryType.Event){var event=(this._entryData[entryIndex]);var totalTime=event.duration;var selfTime=event.selfTime;var eps=1e-6;if(typeof totalTime==="number"){time=Math.abs(totalTime-selfTime)>eps&&selfTime>eps?WebInspector.UIString("%s (self %s)",Number.millisToString(totalTime,true),Number.millisToString(selfTime,true)):Number.millisToString(totalTime,true);}
+title=this.entryTitle(entryIndex);warning=WebInspector.TimelineUIUtils.eventWarning(event);}else if(type===WebInspector.TimelineFlameChartEntryType.Frame){var frame=(this._entryData[entryIndex]);time=WebInspector.UIString("%s ~ %.0f\u2009fps",Number.preciseMillisToString(frame.duration,1),(1000/frame.duration));title=frame.idle?WebInspector.UIString("Idle Frame"):WebInspector.UIString("Frame");if(frame.hasWarnings()){warning=createElement("span");warning.textContent=WebInspector.UIString("Long frame");}}else{return null;}
 var value=createElement("div");var root=WebInspector.createShadowRootWithCoreStyles(value,"timeline/timelineFlamechartPopover.css");var contents=root.createChild("div","timeline-flamechart-popover");contents.createChild("span","timeline-info-time").textContent=time;contents.createChild("span","timeline-info-title").textContent=title;if(warning){warning.classList.add("timeline-info-warning");contents.appendChild(warning);}
 return[{title:"",value:value}];},entryColor:function(entryIndex)
 {function patchColorAndCache(cache,key,lookupColor)
@@ -1256,7 +604,9 @@ function paintWarningDecoration(x,width)
 return false;},forceDecoration:function(entryIndex)
 {var type=this._entryType(entryIndex);return type===WebInspector.TimelineFlameChartEntryType.Frame||type===WebInspector.TimelineFlameChartEntryType.Event&&!!((this._entryData[entryIndex]).warning);},_appendHeader:function(title,style,expanded)
 {this._timelineData.groups.push({startLevel:this._currentLevel,name:title,expanded:expanded,style:style});},_appendEvent:function(event,level)
-{var index=this._entryData.length;this._entryData.push(event);this._timelineData.entryLevels[index]=level;this._timelineData.entryTotalTimes[index]=event.duration||WebInspector.TimelineFlameChartDataProvider.InstantEventVisibleDurationMs;this._timelineData.entryStartTimes[index]=event.startTime;},_appendFlowEvent:function(event,level)
+{var index=this._entryData.length;this._entryData.push(event);this._timelineData.entryLevels[index]=level;var duration;if(WebInspector.TimelineModel.isMarkerEvent(event))
+duration=undefined;else
+duration=event.duration||WebInspector.TimelineFlameChartDataProvider.InstantEventVisibleDurationMs;this._timelineData.entryTotalTimes[index]=duration;this._timelineData.entryStartTimes[index]=event.startTime;},_appendFlowEvent:function(event,level)
 {var timelineData=this._timelineData;function pushStartFlow(event)
 {var flowIndex=timelineData.flowStartTimes.length;timelineData.flowStartTimes.push(event.startTime);timelineData.flowStartLevels.push(level);return flowIndex;}
 function pushEndFlow(event,flowIndex)
@@ -1408,15 +758,14 @@ WebInspector.AggregatedTimelineTreeView.prototype={updateContents:function(selec
 rootNode.children[0].revealAndSelect();},_updateExtensionResolver:function()
 {this._executionContextNamesByOrigin=new Map();for(var target of WebInspector.targetManager.targets()){for(var context of target.runtimeModel.executionContexts())
 this._executionContextNamesByOrigin.set(context.origin,context.name);}},_displayInfoForGroupNode:function(node)
-{var categories=WebInspector.TimelineUIUtils.categories();switch(this._groupBySetting.get()){case WebInspector.TimelineAggregator.GroupBy.Category:var category=categories[node.id]||categories["other"];return{name:category.title,color:category.color};case WebInspector.TimelineAggregator.GroupBy.Domain:case WebInspector.TimelineAggregator.GroupBy.Subdomain:var name=node.id;if(WebInspector.TimelineAggregator.isExtensionInternalURL(name))
+{var categories=WebInspector.TimelineUIUtils.categories();var color=node.id?WebInspector.TimelineUIUtils.eventColor(node.event):categories["other"].color;switch(this._groupBySetting.get()){case WebInspector.TimelineAggregator.GroupBy.Category:var category=categories[node.id]||categories["other"];return{name:category.title,color:category.color};case WebInspector.TimelineAggregator.GroupBy.Domain:case WebInspector.TimelineAggregator.GroupBy.Subdomain:var name=node.id;if(WebInspector.TimelineAggregator.isExtensionInternalURL(name))
 name=WebInspector.UIString("[Chrome extensions overhead]");else if(name.startsWith("chrome-extension"))
-name=this._executionContextNamesByOrigin.get(name)||name;return{name:name||WebInspector.UIString("unattributed"),color:node.id?WebInspector.TimelineUIUtils.eventColor(node.event):categories["other"].color}
-case WebInspector.TimelineAggregator.GroupBy.URL:break;default:console.assert(false,"Unexpected aggregation type");}
-return{name:node.id||WebInspector.UIString("unattributed"),color:node.id?WebInspector.TimelineUIUtils.eventColor(node.event):categories["other"].color}},_populateToolbar:function(parent)
+name=this._executionContextNamesByOrigin.get(name)||name;return{name:name||WebInspector.UIString("unattributed"),color:color};case WebInspector.TimelineAggregator.GroupBy.EventName:var name=node.event.name===WebInspector.TimelineModel.RecordType.JSFrame?WebInspector.UIString("JavaScript"):WebInspector.TimelineUIUtils.eventTitle(node.event);return{name:name,color:node.event.name===WebInspector.TimelineModel.RecordType.JSFrame?WebInspector.TimelineUIUtils.eventStyle(node.event).category.color:color};case WebInspector.TimelineAggregator.GroupBy.URL:break;default:console.assert(false,"Unexpected aggregation type");}
+return{name:node.id||WebInspector.UIString("unattributed"),color:color};},_populateToolbar:function(parent)
 {var panelToolbar=new WebInspector.Toolbar("",parent);this._groupByCombobox=new WebInspector.ToolbarComboBox(this._onGroupByChanged.bind(this));function addGroupingOption(name,id)
 {var option=this._groupByCombobox.createOption(name,"",id);this._groupByCombobox.addOption(option);if(id===this._groupBySetting.get())
 this._groupByCombobox.select(option);}
-addGroupingOption.call(this,WebInspector.UIString("No Grouping"),WebInspector.TimelineAggregator.GroupBy.None);addGroupingOption.call(this,WebInspector.UIString("Group by Category"),WebInspector.TimelineAggregator.GroupBy.Category);addGroupingOption.call(this,WebInspector.UIString("Group by Domain"),WebInspector.TimelineAggregator.GroupBy.Domain);addGroupingOption.call(this,WebInspector.UIString("Group by Subdomain"),WebInspector.TimelineAggregator.GroupBy.Subdomain);addGroupingOption.call(this,WebInspector.UIString("Group by URL"),WebInspector.TimelineAggregator.GroupBy.URL);panelToolbar.appendToolbarItem(this._groupByCombobox);},_buildHeaviestStack:function(treeNode)
+addGroupingOption.call(this,WebInspector.UIString("No Grouping"),WebInspector.TimelineAggregator.GroupBy.None);addGroupingOption.call(this,WebInspector.UIString("Group by Activity"),WebInspector.TimelineAggregator.GroupBy.EventName);addGroupingOption.call(this,WebInspector.UIString("Group by Category"),WebInspector.TimelineAggregator.GroupBy.Category);addGroupingOption.call(this,WebInspector.UIString("Group by Domain"),WebInspector.TimelineAggregator.GroupBy.Domain);addGroupingOption.call(this,WebInspector.UIString("Group by Subdomain"),WebInspector.TimelineAggregator.GroupBy.Subdomain);addGroupingOption.call(this,WebInspector.UIString("Group by URL"),WebInspector.TimelineAggregator.GroupBy.URL);panelToolbar.appendToolbarItem(this._groupByCombobox);},_buildHeaviestStack:function(treeNode)
 {console.assert(!!treeNode.parent,"Attempt to build stack for tree root");var result=[];for(var node=treeNode;node&&node.parent;node=node.parent)
 result.push(node);result=result.reverse();for(node=treeNode;node&&node.children&&node.children.size;){var children=Array.from(node.children.values());node=children.reduce((a,b)=>a.totalTime>b.totalTime?a:b);result.push(node);}
 return result;},_exposePercentages:function()
@@ -1424,13 +773,14 @@ return result;},_exposePercentages:function()
 {this._groupBySetting.set(this._groupByCombobox.selectedOption().value);this._refreshTree();},_onStackViewSelectionChanged:function()
 {var treeNode=this._stackView.selectedTreeNode();if(treeNode)
 this.selectProfileNode(treeNode,true);},_showDetailsForNode:function(node)
-{var stack=this._buildHeaviestStack(node);this._stackView.setStack(stack,node);this._stackView.show(this._detailsView.element);return true;},__proto__:WebInspector.TimelineTreeView.prototype,};WebInspector.CallTreeTimelineTreeView=function(model,filters)
+{var stack=this._buildHeaviestStack(node);this._stackView.setStack(stack,node);this._stackView.show(this._detailsView.element);return true;},_createAggregator:function()
+{return new WebInspector.TimelineAggregator(event=>WebInspector.TimelineUIUtils.eventStyle(event).title,event=>WebInspector.TimelineUIUtils.eventStyle(event).category.name);},__proto__:WebInspector.TimelineTreeView.prototype,};WebInspector.CallTreeTimelineTreeView=function(model,filters)
 {WebInspector.AggregatedTimelineTreeView.call(this,model,filters);this._dataGrid.markColumnAsSortedBy("total",WebInspector.DataGrid.Order.Descending);}
 WebInspector.CallTreeTimelineTreeView.prototype={_buildTree:function()
-{var topDown=this._buildTopDownTree(WebInspector.TimelineAggregator.eventId);var aggregator=new WebInspector.TimelineAggregator(event=>WebInspector.TimelineUIUtils.eventStyle(event).category.name);return aggregator.performGrouping(topDown,this._groupBySetting.get());},__proto__:WebInspector.AggregatedTimelineTreeView.prototype,};WebInspector.BottomUpTimelineTreeView=function(model,filters)
+{var topDown=this._buildTopDownTree(WebInspector.TimelineAggregator.eventId);return this._createAggregator().performGrouping(topDown,this._groupBySetting.get());},__proto__:WebInspector.AggregatedTimelineTreeView.prototype,};WebInspector.BottomUpTimelineTreeView=function(model,filters)
 {WebInspector.AggregatedTimelineTreeView.call(this,model,filters);this._dataGrid.markColumnAsSortedBy("self",WebInspector.DataGrid.Order.Descending);}
 WebInspector.BottomUpTimelineTreeView.prototype={_buildTree:function()
-{var topDown=this._buildTopDownTree(WebInspector.TimelineAggregator.eventId);var aggregator=new WebInspector.TimelineAggregator(event=>WebInspector.TimelineUIUtils.eventStyle(event).category.name);return WebInspector.TimelineProfileTree.buildBottomUp(topDown,aggregator.groupFunction(this._groupBySetting.get()));},__proto__:WebInspector.AggregatedTimelineTreeView.prototype};WebInspector.EventsTimelineTreeView=function(model,filters,delegate)
+{var topDown=this._buildTopDownTree(WebInspector.TimelineAggregator.eventId);return WebInspector.TimelineProfileTree.buildBottomUp(topDown,this._createAggregator().groupFunction(this._groupBySetting.get()));},__proto__:WebInspector.AggregatedTimelineTreeView.prototype};WebInspector.EventsTimelineTreeView=function(model,filters,delegate)
 {this._filtersControl=new WebInspector.TimelineFilters();this._filtersControl.addEventListener(WebInspector.TimelineFilters.Events.FilterChanged,this._onFilterChanged,this);WebInspector.TimelineTreeView.call(this,model,filters);this._delegate=delegate;this._filters.push.apply(this._filters,this._filtersControl.filters());this._dataGrid.markColumnAsSortedBy("startTime",WebInspector.DataGrid.Order.Ascending);}
 WebInspector.EventsTimelineTreeView.prototype={updateContents:function(selection)
 {WebInspector.TimelineTreeView.prototype.updateContents.call(this,selection);if(selection.type()===WebInspector.TimelineSelection.Type.TraceEvent){var event=(selection.object());this._selectEvent(event,true);}},_buildTree:function()
@@ -1499,10 +849,8 @@ WebInspector.TimelineUIUtils.interactionPhaseColor=function(phase)
 {return WebInspector.TimelineUIUtils._interactionPhaseStyles().get(phase).color;}
 WebInspector.TimelineUIUtils.interactionPhaseLabel=function(phase)
 {return WebInspector.TimelineUIUtils._interactionPhaseStyles().get(phase).label;}
-WebInspector.TimelineUIUtils.isMarkerEvent=function(event)
-{var recordTypes=WebInspector.TimelineModel.RecordType;switch(event.name){case recordTypes.TimeStamp:case recordTypes.MarkFirstPaint:return true;case recordTypes.MarkDOMContent:case recordTypes.MarkLoad:return event.args["data"]["isMainFrame"];default:return false;}}
 WebInspector.TimelineUIUtils.isUserFrame=function(frame)
-{return frame.scriptId!=="0"&&!frame.url.startsWith("native ");}
+{return frame.scriptId!=="0"&&!(frame.url&&frame.url.startsWith("native "));}
 WebInspector.TimelineUIUtils.topStackFrame=function(event)
 {var stackTrace=event.stackTrace||event.initiator&&event.initiator.stackTrace;return stackTrace&&stackTrace.length?stackTrace[0]:null;}
 WebInspector.TimelineUIUtils.NetworkCategory={HTML:Symbol("HTML"),Script:Symbol("Script"),Style:Symbol("Style"),Media:Symbol("Media"),Other:Symbol("Other")}
@@ -1515,7 +863,7 @@ WebInspector.TimelineUIUtils.buildDetailsTextForTraceEvent=function(event,target
 detailsText=linkifyLocationAsText(eventData["scriptId"],eventData["scriptLine"],0);break;case recordType.JSFrame:detailsText=WebInspector.beautifyFunctionName(eventData["functionName"]);break;case recordType.EventDispatch:detailsText=eventData?eventData["type"]:null;break;case recordType.Paint:var width=WebInspector.TimelineUIUtils.quadWidth(eventData.clip);var height=WebInspector.TimelineUIUtils.quadHeight(eventData.clip);if(width&&height)
 detailsText=WebInspector.UIString("%d\u2009\u00d7\u2009%d",width,height);break;case recordType.ParseHTML:var endLine=event.args["endData"]&&event.args["endData"]["endLine"];var url=WebInspector.displayNameForURL(event.args["beginData"]["url"]);detailsText=WebInspector.UIString("%s [%s\u2026%s]",url,event.args["beginData"]["startLine"]+1,endLine>=0?endLine+1:"");break;case recordType.CompileScript:case recordType.EvaluateScript:var url=eventData["url"];if(url)
 detailsText=WebInspector.displayNameForURL(url)+":"+eventData["lineNumber"];break;case recordType.ParseScriptOnBackground:case recordType.XHRReadyStateChange:case recordType.XHRLoad:var url=eventData["url"];if(url)
-detailsText=WebInspector.displayNameForURL(url);break;case recordType.WebSocketCreate:case recordType.WebSocketSendHandshakeRequest:case recordType.WebSocketReceiveHandshakeResponse:case recordType.WebSocketDestroy:case recordType.ResourceSendRequest:case recordType.ResourceReceivedData:case recordType.ResourceReceiveResponse:case recordType.ResourceFinish:case recordType.PaintImage:case recordType.DecodeImage:case recordType.ResizeImage:case recordType.DecodeLazyPixelRef:if(event.url)
+detailsText=WebInspector.displayNameForURL(url);break;case recordType.TimeStamp:detailsText=eventData["message"];break;case recordType.WebSocketCreate:case recordType.WebSocketSendHandshakeRequest:case recordType.WebSocketReceiveHandshakeResponse:case recordType.WebSocketDestroy:case recordType.ResourceSendRequest:case recordType.ResourceReceivedData:case recordType.ResourceReceiveResponse:case recordType.ResourceFinish:case recordType.PaintImage:case recordType.DecodeImage:case recordType.ResizeImage:case recordType.DecodeLazyPixelRef:if(event.url)
 detailsText=WebInspector.displayNameForURL(event.url);break;case recordType.EmbedderCallback:detailsText=eventData["callbackName"];break;case recordType.Animation:detailsText=eventData&&eventData["name"];break;case recordType.GCIdleLazySweep:detailsText=WebInspector.UIString("idle sweep");break;case recordType.GCCompleteSweep:detailsText=WebInspector.UIString("complete sweep");break;case recordType.GCCollectGarbage:detailsText=WebInspector.UIString("collect");break;default:if(event.hasCategory(WebInspector.TimelineModel.Category.Console))
 detailsText=null;else
 detailsText=linkifyTopCallFrameAsText();break;}
@@ -1557,7 +905,7 @@ function callbackWrapper()
 {callback(WebInspector.TimelineUIUtils._buildTraceEventDetailsSynchronously(event,model,linkifier,detailed,relatedNodes));}}
 WebInspector.TimelineUIUtils._buildTraceEventDetailsSynchronously=function(event,model,linkifier,detailed,relatedNodesMap)
 {var stats={};var recordTypes=WebInspector.TimelineModel.RecordType;var relatedNodeLabel;var contentHelper=new WebInspector.TimelineDetailsContentHelper(model.target(),linkifier);contentHelper.addSection(WebInspector.TimelineUIUtils.eventTitle(event),WebInspector.TimelineUIUtils.eventStyle(event).category);var eventData=event.args["data"];var initiator=event.initiator;if(event.warning)
-contentHelper.appendWarningRow(event);if(event.name===recordTypes.JSFrame){var deoptReason=eventData["deoptReason"];if(deoptReason&&deoptReason!="no reason")
+contentHelper.appendWarningRow(event);if(event.name===recordTypes.JSFrame){var deoptReason=eventData["deoptReason"];if(deoptReason&&deoptReason!=="no reason")
 contentHelper.appendWarningRow(event,WebInspector.TimelineModel.WarningType.V8Deopt);}
 if(detailed){contentHelper.appendTextRow(WebInspector.UIString("Self Time"),Number.millisToString(event.selfTime,true));contentHelper.appendTextRow(WebInspector.UIString("Total Time"),Number.millisToString(event.duration||0,true));}
 switch(event.name){case recordTypes.GCEvent:case recordTypes.MajorGC:case recordTypes.MinorGC:var delta=event.args["usedHeapSizeBefore"]-event.args["usedHeapSizeAfter"];contentHelper.appendTextRow(WebInspector.UIString("Collected"),Number.bytesToString(delta));break;case recordTypes.JSFrame:var detailsNode=WebInspector.TimelineUIUtils.buildDetailsNodeForTraceEvent(event,model.target(),linkifier);if(detailsNode)
@@ -1702,11 +1050,9 @@ WebInspector.TimelineUIUtils.visibleEventsFilter=function()
 {return new WebInspector.TimelineVisibleEventsFilter(WebInspector.TimelineUIUtils._visibleTypes());}
 WebInspector.TimelineUIUtils.categories=function()
 {if(WebInspector.TimelineUIUtils._categories)
-return WebInspector.TimelineUIUtils._categories;WebInspector.TimelineUIUtils._categories={loading:new WebInspector.TimelineCategory("loading",WebInspector.UIString("Loading"),true,"hsl(214, 67%, 74%)","hsl(214, 67%, 66%)"),scripting:new WebInspector.TimelineCategory("scripting",WebInspector.UIString("Scripting"),true,"hsl(43, 83%, 72%)","hsl(43, 83%, 64%) "),rendering:new WebInspector.TimelineCategory("rendering",WebInspector.UIString("Rendering"),true,"hsl(256, 67%, 76%)","hsl(256, 67%, 70%)"),painting:new WebInspector.TimelineCategory("painting",WebInspector.UIString("Painting"),true,"hsl(109, 33%, 64%)","hsl(109, 33%, 55%)"),gpu:new WebInspector.TimelineCategory("gpu",WebInspector.UIString("GPU"),false,"hsl(109, 33%, 64%)","hsl(109, 33%, 55%)"),other:new WebInspector.TimelineCategory("other",WebInspector.UIString("Other"),false,"hsl(0, 0%, 87%)","hsl(0, 0%, 79%)"),idle:new WebInspector.TimelineCategory("idle",WebInspector.UIString("Idle"),false,"hsl(0, 100%, 100%)","hsl(0, 100%, 100%)")};return WebInspector.TimelineUIUtils._categories;};WebInspector.AsyncEventGroup=function(title)
-{this.title=title;}
-WebInspector.TimelineUIUtils.asyncEventGroups=function()
-{if(WebInspector.TimelineUIUtils._asyncEventGroups)
-return WebInspector.TimelineUIUtils._asyncEventGroups;WebInspector.TimelineUIUtils._asyncEventGroups={animation:new WebInspector.AsyncEventGroup(WebInspector.UIString("Animation")),console:new WebInspector.AsyncEventGroup(WebInspector.UIString("Console")),userTiming:new WebInspector.AsyncEventGroup(WebInspector.UIString("User Timing")),input:new WebInspector.AsyncEventGroup(WebInspector.UIString("Input Events"))};return WebInspector.TimelineUIUtils._asyncEventGroups;}
+return WebInspector.TimelineUIUtils._categories;WebInspector.TimelineUIUtils._categories={loading:new WebInspector.TimelineCategory("loading",WebInspector.UIString("Loading"),true,"hsl(214, 67%, 74%)","hsl(214, 67%, 66%)"),scripting:new WebInspector.TimelineCategory("scripting",WebInspector.UIString("Scripting"),true,"hsl(43, 83%, 72%)","hsl(43, 83%, 64%) "),rendering:new WebInspector.TimelineCategory("rendering",WebInspector.UIString("Rendering"),true,"hsl(256, 67%, 76%)","hsl(256, 67%, 70%)"),painting:new WebInspector.TimelineCategory("painting",WebInspector.UIString("Painting"),true,"hsl(109, 33%, 64%)","hsl(109, 33%, 55%)"),gpu:new WebInspector.TimelineCategory("gpu",WebInspector.UIString("GPU"),false,"hsl(109, 33%, 64%)","hsl(109, 33%, 55%)"),other:new WebInspector.TimelineCategory("other",WebInspector.UIString("Other"),false,"hsl(0, 0%, 87%)","hsl(0, 0%, 79%)"),idle:new WebInspector.TimelineCategory("idle",WebInspector.UIString("Idle"),false,"hsl(0, 100%, 100%)","hsl(0, 100%, 100%)")};return WebInspector.TimelineUIUtils._categories;};WebInspector.TimelineUIUtils.titleForAsyncEventGroup=function(group)
+{if(!WebInspector.TimelineUIUtils._titleForAsyncEventGroupMap){var groups=WebInspector.TimelineModel.AsyncEventGroup;WebInspector.TimelineUIUtils._titleForAsyncEventGroupMap=new Map([[groups.animation,WebInspector.UIString("Animation")],[groups.console,WebInspector.UIString("Console")],[groups.userTiming,WebInspector.UIString("User Timing")],[groups.input,WebInspector.UIString("Input")]]);}
+return WebInspector.TimelineUIUtils._titleForAsyncEventGroupMap.get(group)||"";}
 WebInspector.TimelineUIUtils.generatePieChart=function(aggregatedStats,selfCategory,selfTime)
 {var total=0;for(var categoryName in aggregatedStats)
 total+=aggregatedStats[categoryName];var element=createElementWithClass("div","timeline-details-view-pie-chart-wrapper hbox");var pieChart=new WebInspector.PieChart(100);pieChart.element.classList.add("timeline-details-view-pie-chart");pieChart.setTotal(total);var pieChartContainer=element.createChild("div","vbox");pieChartContainer.appendChild(pieChart.element);pieChartContainer.createChild("div","timeline-details-view-pie-chart-total").textContent=WebInspector.UIString("Total: %s",Number.millisToString(total,true));var footerElement=element.createChild("div","timeline-aggregated-info-legend");function appendLegendRow(name,title,value,color)
@@ -1845,72 +1191,7 @@ this._updateImagePosition();},_updateImagePosition:function()
 this._transformController.setScaleConstraints(0.5,10/scale);var matrix=new WebKitCSSMatrix().scale(this._transformController.scale(),this._transformController.scale()).translate(clientWidth/2,clientHeight/2).scale(scale,scale).translate(-width/2,-height/2);var bounds=WebInspector.Geometry.boundsForTransformedPoints(matrix,[0,0,0,width,height,0]);this._transformController.clampOffsets(paddingX-bounds.maxX,clientWidth-paddingX-bounds.minX,paddingY-bounds.maxY,clientHeight-paddingY-bounds.minY);matrix=new WebKitCSSMatrix().translate(this._transformController.offsetX(),this._transformController.offsetY()).multiply(matrix);this._imageContainer.style.webkitTransform=matrix.toString();},showImage:function(imageURL)
 {this._imageContainer.classList.toggle("hidden",!imageURL);if(imageURL)
 this._imageElement.src=imageURL;},setMask:function(maskRectangle)
-{this._maskRectangle=maskRectangle;this._maskElement.classList.toggle("hidden",!maskRectangle);},__proto__:WebInspector.Widget.prototype};;WebInspector.TimelineProfileTree={};WebInspector.TimelineProfileTree.Node=function()
-{this.totalTime;this.selfTime;this.id;this.event;this.children;this.parent;this._isGroupNode=false;}
-WebInspector.TimelineProfileTree.Node.prototype={isGroupNode:function()
-{return this._isGroupNode;}}
-WebInspector.TimelineProfileTree.buildTopDown=function(events,filters,startTime,endTime,eventIdCallback)
-{var initialTime=1e7;var root=new WebInspector.TimelineProfileTree.Node();root.totalTime=initialTime;root.selfTime=initialTime;root.children=(new Map());var parent=root;function onStartEvent(e)
-{if(!WebInspector.TimelineModel.isVisible(filters,e))
-return;var time=e.endTime?Math.min(endTime,e.endTime)-Math.max(startTime,e.startTime):0;var id=eventIdCallback?eventIdCallback(e):Symbol("uniqueEventId");if(!parent.children)
-parent.children=(new Map());var node=parent.children.get(id);if(node){node.selfTime+=time;node.totalTime+=time;}else{node=new WebInspector.TimelineProfileTree.Node();node.totalTime=time;node.selfTime=time;node.parent=parent;node.id=id;node.event=e;parent.children.set(id,node);}
-parent.selfTime-=time;if(parent.selfTime<0){console.log("Error: Negative self of "+parent.selfTime,e);parent.selfTime=0;}
-if(e.endTime)
-parent=node;}
-function onEndEvent(e)
-{if(!WebInspector.TimelineModel.isVisible(filters,e))
-return;parent=parent.parent;}
-var instantEventCallback=eventIdCallback?undefined:onStartEvent;WebInspector.TimelineModel.forEachEvent(events,onStartEvent,onEndEvent,instantEventCallback,startTime,endTime);root.totalTime-=root.selfTime;root.selfTime=0;return root;}
-WebInspector.TimelineProfileTree.buildBottomUp=function(topDownTree,groupingCallback)
-{var buRoot=new WebInspector.TimelineProfileTree.Node();buRoot.selfTime=0;buRoot.totalTime=0;buRoot.children=new Map();var nodesOnStack=(new Set());if(topDownTree.children)
-topDownTree.children.forEach(processNode);buRoot.totalTime=topDownTree.totalTime;function processNode(tdNode)
-{var buParent=groupingCallback&&groupingCallback(tdNode)||buRoot;if(buParent!==buRoot){buRoot.children.set(buParent.id,buParent);buParent.parent=buRoot;}
-appendNode(tdNode,buParent);var hadNode=nodesOnStack.has(tdNode.id);if(!hadNode)
-nodesOnStack.add(tdNode.id);if(tdNode.children)
-tdNode.children.forEach(processNode);if(!hadNode)
-nodesOnStack.delete(tdNode.id);}
-function appendNode(tdNode,buParent)
-{var selfTime=tdNode.selfTime;var totalTime=tdNode.totalTime;buParent.selfTime+=selfTime;buParent.totalTime+=selfTime;while(tdNode.parent){if(!buParent.children)
-buParent.children=(new Map());var id=tdNode.id;var buNode=buParent.children.get(id);if(!buNode){buNode=new WebInspector.TimelineProfileTree.Node();buNode.selfTime=selfTime;buNode.totalTime=totalTime;buNode.event=tdNode.event;buNode.id=id;buNode.parent=buParent;buParent.children.set(id,buNode);}else{buNode.selfTime+=selfTime;if(!nodesOnStack.has(id))
-buNode.totalTime+=totalTime;}
-tdNode=tdNode.parent;buParent=buNode;}}
-var rootChildren=buRoot.children;for(var item of rootChildren.entries()){if(item[1].selfTime===0)
-rootChildren.delete((item[0]));}
-return buRoot;}
-WebInspector.TimelineProfileTree.eventURL=function(event)
-{var data=event.args["data"]||event.args["beginData"];if(data&&data["url"])
-return data["url"];var frame=WebInspector.TimelineProfileTree.eventStackFrame(event);while(frame){var url=frame["url"];if(url)
-return url;frame=frame.parent;}
-return null;}
-WebInspector.TimelineProfileTree.eventStackFrame=function(event)
-{if(event.name==WebInspector.TimelineModel.RecordType.JSFrame)
-return event.args["data"];var topFrame=event.stackTrace&&event.stackTrace[0];if(topFrame)
-return topFrame;var initiator=event.initiator;return initiator&&initiator.stackTrace&&initiator.stackTrace[0]||null;}
-WebInspector.TimelineAggregator=function(categoryMapper)
-{this._categoryMapper=categoryMapper;this._groupNodes=new Map();}
-WebInspector.TimelineAggregator.GroupBy={None:"None",Category:"Category",Domain:"Domain",Subdomain:"Subdomain",URL:"URL"}
-WebInspector.TimelineAggregator.eventId=function(event)
-{if(event.name===WebInspector.TimelineModel.RecordType.JSFrame){var data=event.args["data"];return"f:"+data["functionName"]+"@"+(data["scriptId"]||data["url"]||"");}
-return event.name+":@"+WebInspector.TimelineProfileTree.eventURL(event);}
-WebInspector.TimelineAggregator._extensionInternalPrefix="extensions::";WebInspector.TimelineAggregator._groupNodeFlag=Symbol("groupNode");WebInspector.TimelineAggregator.isExtensionInternalURL=function(url)
-{return url.startsWith(WebInspector.TimelineAggregator._extensionInternalPrefix);}
-WebInspector.TimelineAggregator.prototype={groupFunction:function(groupBy)
-{var idMapper=this._nodeToGroupIdFunction(groupBy);return idMapper&&this._nodeToGroupNode.bind(this,idMapper);},performGrouping:function(root,groupBy)
-{var nodeMapper=this.groupFunction(groupBy);if(!nodeMapper)
-return root;for(var node of root.children.values()){var groupNode=nodeMapper(node);groupNode.parent=root;groupNode.selfTime+=node.selfTime;groupNode.totalTime+=node.totalTime;groupNode.children.set(node.id,node);node.parent=root;}
-root.children=this._groupNodes;return root;},_nodeToGroupIdFunction:function(groupBy)
-{function groupByURL(node)
-{return WebInspector.TimelineProfileTree.eventURL(node.event)||"";}
-function groupByDomain(groupSubdomains,node)
-{var url=WebInspector.TimelineProfileTree.eventURL(node.event)||"";if(WebInspector.TimelineAggregator.isExtensionInternalURL(url))
-return WebInspector.TimelineAggregator._extensionInternalPrefix;var parsedURL=url.asParsedURL();if(!parsedURL)
-return"";if(parsedURL.scheme==="chrome-extension")
-return parsedURL.scheme+"://"+parsedURL.host;if(!groupSubdomains)
-return parsedURL.host;if(/^[.0-9]+$/.test(parsedURL.host))
-return parsedURL.host;var domainMatch=/([^.]*\.)?[^.]*$/.exec(parsedURL.host);return domainMatch&&domainMatch[0]||"";}
-switch(groupBy){case WebInspector.TimelineAggregator.GroupBy.None:return null;case WebInspector.TimelineAggregator.GroupBy.Category:return node=>node.event?this._categoryMapper(node.event):"";case WebInspector.TimelineAggregator.GroupBy.Subdomain:return groupByDomain.bind(null,false);case WebInspector.TimelineAggregator.GroupBy.Domain:return groupByDomain.bind(null,true);case WebInspector.TimelineAggregator.GroupBy.URL:return groupByURL;default:return null;}},_buildGroupNode:function(id,event)
-{var groupNode=new WebInspector.TimelineProfileTree.Node();groupNode.id=id;groupNode.selfTime=0;groupNode.totalTime=0;groupNode.children=new Map();groupNode.event=event;groupNode._isGroupNode=true;this._groupNodes.set(id,groupNode);return groupNode;},_nodeToGroupNode:function(nodeToGroupId,node)
-{var id=nodeToGroupId(node);return this._groupNodes.get(id)||this._buildGroupNode(id,node.event);},};WebInspector.TransformController=function(element,disableRotate)
+{this._maskRectangle=maskRectangle;this._maskElement.classList.toggle("hidden",!maskRectangle);},__proto__:WebInspector.Widget.prototype};;WebInspector.TransformController=function(element,disableRotate)
 {this._shortcuts={};this.element=element;if(this.element.tabIndex<0)
 this.element.tabIndex=0;this._registerShortcuts();WebInspector.installDragHandle(element,this._onDragStart.bind(this),this._onDrag.bind(this),this._onDragEnd.bind(this),"move",null);element.addEventListener("keydown",this._onKeyDown.bind(this),false);element.addEventListener("keyup",this._onKeyUp.bind(this),false);element.addEventListener("mousewheel",this._onMouseWheel.bind(this),false);this._minScale=0;this._maxScale=Infinity;this._controlPanelToolbar=new WebInspector.Toolbar("transform-control-panel");this._modeButtons={};if(!disableRotate){var panModeButton=new WebInspector.ToolbarToggle(WebInspector.UIString("Pan mode (X)"),"pan-toolbar-item");panModeButton.addEventListener("click",this._setMode.bind(this,WebInspector.TransformController.Modes.Pan));this._modeButtons[WebInspector.TransformController.Modes.Pan]=panModeButton;this._controlPanelToolbar.appendToolbarItem(panModeButton);var rotateModeButton=new WebInspector.ToolbarToggle(WebInspector.UIString("Rotate mode (V)"),"rotate-toolbar-item");rotateModeButton.addEventListener("click",this._setMode.bind(this,WebInspector.TransformController.Modes.Rotate));this._modeButtons[WebInspector.TransformController.Modes.Rotate]=rotateModeButton;this._controlPanelToolbar.appendToolbarItem(rotateModeButton);}
 this._setMode(WebInspector.TransformController.Modes.Pan);var resetButton=new WebInspector.ToolbarButton(WebInspector.UIString("Reset transform (0)"),"center-toolbar-item");resetButton.addEventListener("click",this.resetAndNotify.bind(this,undefined));this._controlPanelToolbar.appendToolbarItem(resetButton);this._reset();}
@@ -1959,7 +1240,7 @@ this._selectionWindow.setEnabled(true);this._progressBanner.classList.remove("hi
 {this._progressBanner.classList.add("hidden");this._profiles=profiles;this._update();this._updatePieChart();}},_update:function()
 {this._canvas.width=this._canvasContainer.clientWidth*window.devicePixelRatio;this._canvas.height=this._canvasContainer.clientHeight*window.devicePixelRatio;this._samplesPerBar=0;if(!this._profiles||!this._profiles.length)
 return;var maxBars=Math.floor((this._canvas.width-2*this._barPaddingWidth)/this._outerBarWidth);var sampleCount=this._log.length;this._samplesPerBar=Math.ceil(sampleCount/maxBars);var maxBarTime=0;var barTimes=[];var barHeightByCategory=[];var heightByCategory={};for(var i=0,lastBarIndex=0,lastBarTime=0;i<sampleCount;){var categoryName=(this._logCategories[i]&&this._logCategories[i].name)||"misc";var sampleIndex=this._log[i].commandIndex;for(var row=0;row<this._profiles.length;row++){var sample=this._profiles[row][sampleIndex];lastBarTime+=sample;heightByCategory[categoryName]=(heightByCategory[categoryName]||0)+sample;}
-++i;if(i-lastBarIndex==this._samplesPerBar||i==sampleCount){var factor=this._profiles.length*(i-lastBarIndex);lastBarTime/=factor;for(categoryName in heightByCategory)
+++i;if(i-lastBarIndex===this._samplesPerBar||i===sampleCount){var factor=this._profiles.length*(i-lastBarIndex);lastBarTime/=factor;for(categoryName in heightByCategory)
 heightByCategory[categoryName]/=factor;barTimes.push(lastBarTime);barHeightByCategory.push(heightByCategory);if(lastBarTime>maxBarTime)
 maxBarTime=lastBarTime;lastBarTime=0;heightByCategory={};lastBarIndex=i;}}
 const paddingHeight=4*window.devicePixelRatio;var scale=(this._canvas.height-paddingHeight-this._minBarHeight)/maxBarTime;for(var i=0;i<barTimes.length;++i){for(var categoryName in barHeightByCategory[i])
@@ -2015,7 +1296,7 @@ WebInspector.PaintProfilerView._categoryForLogItem=function(logItem)
 {var method=logItem.method.toTitleCase();var logItemCategories=WebInspector.PaintProfilerView._initLogItemCategories();var result=logItemCategories[method];if(!result){result=WebInspector.PaintProfilerView.categories()["misc"];logItemCategories[method]=result;}
 return result;};WebInspector.TimelinePanel=function()
 {WebInspector.Panel.call(this,"timeline");this.registerRequiredCSS("timeline/timelinePanel.css");this.element.addEventListener("contextmenu",this._contextMenu.bind(this),false);this._dropTarget=new WebInspector.DropTarget(this.element,[WebInspector.DropTarget.Types.Files,WebInspector.DropTarget.Types.URIList],WebInspector.UIString("Drop timeline file or URL here"),this._handleDrop.bind(this));this._state=WebInspector.TimelinePanel.State.Idle;this._detailsLinkifier=new WebInspector.Linkifier();this._windowStartTime=0;this._windowEndTime=Infinity;this._millisecondsToRecordAfterLoadEvent=3000;this._toggleRecordAction=(WebInspector.actionRegistry.action("timeline.toggle-recording"));this._filters=[];if(!Runtime.experiments.isEnabled("timelineShowAllEvents")){this._filters.push(WebInspector.TimelineUIUtils.visibleEventsFilter());this._filters.push(new WebInspector.ExcludeTopLevelFilter());}
-this._tracingModelBackingStorage=new WebInspector.TempFileBackingStorage("tracing");this._tracingModel=new WebInspector.TracingModel(this._tracingModelBackingStorage);this._model=new WebInspector.TimelineModel(WebInspector.TimelineUIUtils.visibleEventsFilter());this._frameModel=new WebInspector.TimelineFrameModel();this._irModel=new WebInspector.TimelineIRModel();if(Runtime.experiments.isEnabled("cpuThrottling"))
+this._tracingModelBackingStorage=new WebInspector.TempFileBackingStorage("tracing");this._tracingModel=new WebInspector.TracingModel(this._tracingModelBackingStorage);this._model=new WebInspector.TimelineModel(WebInspector.TimelineUIUtils.visibleEventsFilter());this._frameModel=new WebInspector.TimelineFrameModel(event=>WebInspector.TimelineUIUtils.eventStyle(event).category.name);this._irModel=new WebInspector.TimelineIRModel();if(Runtime.experiments.isEnabled("cpuThrottling"))
 this._cpuThrottlingManager=new WebInspector.CPUThrottlingManager();this._currentViews=[];this._captureNetworkSetting=WebInspector.settings.createSetting("timelineCaptureNetwork",false);this._captureJSProfileSetting=WebInspector.settings.createSetting("timelineEnableJSSampling",true);this._captureMemorySetting=WebInspector.settings.createSetting("timelineCaptureMemory",false);this._captureLayersAndPicturesSetting=WebInspector.settings.createSetting("timelineCaptureLayersAndPictures",false);this._captureFilmStripSetting=WebInspector.settings.createSetting("timelineCaptureFilmStrip",false);this._panelToolbar=new WebInspector.Toolbar("",this.element);this._createToolbarItems();var timelinePane=new WebInspector.VBox();timelinePane.show(this.element);var topPaneElement=timelinePane.element.createChild("div","hbox");topPaneElement.id="timeline-overview-panel";this._overviewPane=new WebInspector.TimelineOverviewPane("timeline");this._overviewPane.addEventListener(WebInspector.TimelineOverviewPane.Events.WindowChanged,this._onWindowChanged.bind(this));this._overviewPane.show(topPaneElement);this._statusPaneContainer=timelinePane.element.createChild("div","status-pane-container fill");this._createFileSelector();WebInspector.targetManager.addEventListener(WebInspector.TargetManager.Events.PageReloadRequested,this._pageReloadRequested,this);WebInspector.targetManager.addEventListener(WebInspector.TargetManager.Events.Load,this._loadEventFired,this);this._detailsSplitWidget=new WebInspector.SplitWidget(false,true,"timelinePanelDetailsSplitViewState");this._detailsSplitWidget.element.classList.add("timeline-details-split");this._detailsView=new WebInspector.TimelineDetailsView(this._model,this._filters,this);this._detailsSplitWidget.installResizer(this._detailsView.headerElement());this._detailsSplitWidget.setSidebarWidget(this._detailsView);this._searchableView=new WebInspector.SearchableView(this);this._searchableView.setMinimumSize(0,100);this._searchableView.element.classList.add("searchable-view");this._detailsSplitWidget.setMainWidget(this._searchableView);this._stackView=new WebInspector.StackView(false);this._stackView.element.classList.add("timeline-view-stack");this._stackView.show(this._searchableView.element);this._onModeChanged();this._detailsSplitWidget.show(timelinePane.element);this._detailsSplitWidget.hideSidebar();WebInspector.targetManager.addEventListener(WebInspector.TargetManager.Events.SuspendStateChanged,this._onSuspendStateChanged,this);this._showRecordingHelpMessage();this._selectedSearchResult;this._searchResults;}
 WebInspector.TimelinePanel.Perspectives={Load:"Load",Responsiveness:"Responsiveness",Custom:"Custom"}
 WebInspector.TimelinePanel.DetailsTab={Details:"Details",Events:"Events",CallTree:"CallTree",BottomUp:"BottomUp",PaintProfiler:"PaintProfiler",LayerViewer:"LayerViewer"}
@@ -2115,7 +1396,7 @@ this._statusPane.finish();this.loadingProgress(0);},loadingProgress:function(pro
 this._statusPane.updateProgressBar(WebInspector.UIString("Received"),progress*100);},loadingComplete:function(success)
 {var loadedFromFile=!!this._loader;delete this._loader;this._setState(WebInspector.TimelinePanel.State.Idle);if(!success){this._statusPane.hide();delete this._statusPane;this._clear();return;}
 if(this._statusPane)
-this._statusPane.updateStatus(WebInspector.UIString("Processing timeline\u2026"));this._model.setEvents(this._tracingModel,loadedFromFile);this._frameModel.reset();this._frameModel.addTraceEvents(this._model.target(),this._model.inspectedTargetEvents(),this._model.sessionId()||"");this._irModel.populate(this._model);this._model.cpuProfiles().forEach(profile=>WebInspector.LineLevelProfile.instance().appendCPUProfile(profile));if(this._statusPane)
+this._statusPane.updateStatus(WebInspector.UIString("Processing timeline\u2026"));this._model.setEvents(this._tracingModel,loadedFromFile);this._frameModel.reset();this._frameModel.addTraceEvents(this._model.target(),this._model.inspectedTargetEvents(),this._model.sessionId()||"");var groups=WebInspector.TimelineModel.AsyncEventGroup;var asyncEventsByGroup=this._model.mainThreadAsyncEvents();this._irModel.populate(asyncEventsByGroup.get(groups.input),asyncEventsByGroup.get(groups.animation));this._model.cpuProfiles().forEach(profile=>WebInspector.LineLevelProfile.instance().appendCPUProfile(profile));if(this._statusPane)
 this._statusPane.hide();delete this._statusPane;this._overviewPane.reset();this._overviewPane.setBounds(this._model.minimumRecordTime(),this._model.maximumRecordTime());this._setAutoWindowTimes();this._refreshViews();for(var i=0;i<this._overviewControls.length;++i)
 this._overviewControls[i].timelineStopped();this._setMarkers();this._overviewPane.scheduleUpdate();this._updateSearchHighlight(false,true);this._detailsSplitWidget.showBoth();},_showRecordingStarted:function()
 {if(this._statusPane)
@@ -2295,4 +1576,4 @@ WebInspector.CPUThrottlingManager.prototype={setRate:function(value)
 {this._throttlingRate=value;this._targets.forEach(target=>target.emulationAgent().setCPUThrottlingRate(value));},rate:function()
 {return this._throttlingRate;},targetAdded:function(target)
 {this._targets.push(target);target.emulationAgent().setCPUThrottlingRate(this._throttlingRate);},targetRemoved:function(target)
-{this._targets.remove(target,true);},__proto__:WebInspector.Object.prototype};Runtime.cachedResources["timeline/invalidationsTree.css"]="/*\n * Copyright 2015 The Chromium Authors. All rights reserved.\n * Use of this source code is governed by a BSD-style license that can be\n * found in the LICENSE file.\n */\n\n.header, .children, .content {\n    min-height: initial;\n    line-height: initial;\n}\n\n/* This TreeElement is always expanded and has no arrow.   */\n/* FIXME(crbug.com/475618): Implement this in TreeElement. */\n.children li::before {\n    display: none;\n}\n\n.content {\n    margin-bottom: 4px;\n}\n\n.content .stack-preview-container {\n    margin-left: 8px;\n}\n\n.content .node-list {\n    margin-left: 10px;\n}\n\n/*# sourceURL=timeline/invalidationsTree.css */";Runtime.cachedResources["timeline/timelineFlamechartPopover.css"]="/*\n * Copyright (c) 2015 The Chromium Authors. All rights reserved.\n * Use of this source code is governed by a BSD-style license that can be\n * found in the LICENSE file.\n */\n\n.timeline-flamechart-popover span {\n    margin-right: 5px;\n}\n\n.timeline-flamechart-popover span.timeline-info-network-time {\n    color: #009;\n}\n\n.timeline-flamechart-popover span.timeline-info-time {\n    color: #282;\n}\n\n.timeline-flamechart-popover span.timeline-info-warning {\n    color: #e44;\n}\n\n.timeline-flamechart-popover span.timeline-info-warning * {\n    color: inherit;\n}\n\n/*# sourceURL=timeline/timelineFlamechartPopover.css */";Runtime.cachedResources["timeline/timelinePanel.css"]="/*\n * Copyright (C) 2006, 2007, 2008 Apple Inc.  All rights reserved.\n * Copyright (C) 2009 Anthony Ricaud <rik@webkit.org>\n *\n * Redistribution and use in source and binary forms, with or without\n * modification, are permitted provided that the following conditions\n * are met:\n *\n * 1.  Redistributions of source code must retain the above copyright\n *     notice, this list of conditions and the following disclaimer.\n * 2.  Redistributions in binary form must reproduce the above copyright\n *     notice, this list of conditions and the following disclaimer in the\n *     documentation and/or other materials provided with the distribution.\n * 3.  Neither the name of Apple Computer, Inc. (\"Apple\") nor the names of\n *     its contributors may be used to endorse or promote products derived\n *     from this software without specific prior written permission.\n *\n * THIS SOFTWARE IS PROVIDED BY APPLE AND ITS CONTRIBUTORS \"AS IS\" AND ANY\n * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED\n * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE\n * DISCLAIMED. IN NO EVENT SHALL APPLE OR ITS CONTRIBUTORS BE LIABLE FOR ANY\n * DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES\n * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;\n * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND\n * ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT\n * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF\n * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.\n */\n\n.panel.timeline > .toolbar {\n    border-bottom: 1px solid #dadada;\n}\n\n#timeline-overview-panel {\n    flex: none;\n    position: relative;\n    border-bottom: 1px solid rgb(140, 140, 140);\n}\n\n.panel.timeline .banner,\n.panel.layers .banner {\n    color: #777;\n    background-color: white;\n    display: flex;\n    justify-content: center;\n    align-items: center;\n    text-align: center;\n    padding: 20px;\n    position: absolute;\n    top: 0;\n    right: 0;\n    bottom: 0;\n    left: 0;\n    font-size: 13px;\n    overflow: auto;\n    z-index: 500;\n}\n\n.panel.timeline .banner a,\n.panel.layers .banner a {\n    color: inherit;\n}\n\n#timeline-overview-panel .timeline-graph-bar {\n    pointer-events: none;\n}\n\n#timeline-overview-grid {\n    background-color: rgb(255, 255, 255);\n}\n\n#timeline-overview-grid .timeline-grid-header {\n    height: 12px;\n}\n\n#timeline-overview-grid .resources-dividers-label-bar {\n    pointer-events: auto;\n    height: 12px;\n}\n\n#timeline-overview-grid .resources-divider-label {\n    top: 1px;\n}\n\n.timeline-details-split {\n    flex: auto;\n}\n\n.timeline-view-stack {\n    flex: auto;\n    display: flex;\n}\n\n#timeline-container .webkit-html-external-link,\n#timeline-container .webkit-html-resource-link {\n    color: inherit;\n}\n\n.timeline-graph-side.hovered {\n    background-color: rgba(0, 0, 0, 0.05) !important;\n}\n\n.timeline.panel .status-pane-container {\n    z-index: 1000;\n    pointer-events: none;\n    display: flex;\n    align-items: center;\n}\n\n.timeline.panel .status-pane-container.tinted {\n    background-color: hsla(0, 0%, 90%, 0.8);\n    pointer-events: auto;\n}\n\n#timeline-overview-panel .overview-strip {\n    margin-top: 2px;\n    justify-content: center;\n}\n\n#timeline-overview-panel .overview-strip .timeline-overview-strip-title {\n    color: #666;\n    font-size: 10px;\n    font-weight: bold;\n    z-index: 100;\n    background-color: rgba(255, 255, 255, 0.7);\n    padding: 0 4px;\n    position: absolute;\n    top: 0;\n    right: 0;\n}\n\n#timeline-overview-cpu-activity {\n    flex-basis: 25px;\n}\n\n#timeline-overview-network,\n#timeline-overview-framerate {\n    flex-basis: 20px;\n}\n\n#timeline-overview-filmstrip {\n    flex-basis: 40px;\n}\n\n#timeline-overview-memory {\n    flex-basis: 22px;\n}\n\n#timeline-overview-framerate::before,\n#timeline-overview-network::before,\n#timeline-overview-cpu-activity::before {\n    content: \"\";\n    position: absolute;\n    left: 0;\n    right: 0;\n    bottom: 0;\n    border-bottom: 1px solid hsla(0, 0%, 0%, 0.06);\n    z-index: -200;\n}\n\n.overview-strip .background {\n    z-index: -10;\n}\n\n#timeline-overview-responsiveness {\n    flex-basis: 6px;\n    margin-top: 1px !important;\n}\n\n#timeline-overview-input {\n    flex-basis: 6px;\n}\n\n#timeline-overview-pane {\n    flex: auto;\n    position: relative;\n    overflow: hidden;\n}\n\n#timeline-overview-container {\n    display: flex;\n    flex-direction: column;\n    flex: none;\n    position: relative;\n    overflow: hidden;\n}\n\n#timeline-overview-container canvas {\n    width: 100%;\n    height: 100%;\n}\n\n#timeline-graphs {\n    position: absolute;\n    left: 0;\n    right: 0;\n    max-height: 100%;\n    top: 20px;\n}\n\n.timeline-aggregated-legend-title {\n    display: inline-block;\n}\n\n.timeline-aggregated-legend-value {\n    display: inline-block;\n    width: 70px;\n    text-align: right;\n}\n\n.timeline-aggregated-legend-swatch {\n    display: inline-block;\n    width: 11px;\n    height: 11px;\n    margin: 0 6px;\n    position: relative;\n    top: 1px;\n    border: 1px solid rgba(0, 0, 0, 0.2);\n}\n\n.popover ul {\n    margin: 0;\n    padding: 0;\n    list-style-type: none;\n}\n\n#resources-container-content {\n    overflow: hidden;\n    min-height: 100%;\n}\n\n.timeline-toolbar-resizer {\n    background-image: url(Images/toolbarResizerVertical.png);\n    background-repeat: no-repeat;\n    background-position: right center, center;\n}\n\n.memory-graph-label {\n    position: absolute;\n    right: 0;\n    bottom: 0;\n    font-size: 9px;\n    color: #888;\n    white-space: nowrap;\n    padding: 0 4px;\n    background-color: hsla(0, 0%, 100%, 0.8);\n}\n\n#memory-graphs-canvas-container {\n    overflow: hidden;\n    flex: auto;\n    position: relative;\n}\n\n#memory-counters-graph {\n    flex: auto;\n}\n\n#memory-graphs-canvas-container .memory-counter-marker {\n    position: absolute;\n    border-radius: 3px;\n    width: 5px;\n    height: 5px;\n    margin-left: -3px;\n    margin-top: -2px;\n}\n\n#memory-graphs-container .memory-counter-selector-swatches {\n    flex: 0 0 24px;\n    padding: 5px 0;\n    background-color: #eee;\n    border-bottom: 1px solid #ddd;\n}\n\n.memory-counter-selector-info {\n    flex: 0 0 auto;\n    margin-left: 5px;\n    white-space: nowrap;\n}\n\n.memory-counter-selector-info .range {\n    margin: 0 4px;\n    align-items: center;\n    display: inline-flex;\n}\n\n.memory-counter-value {\n    margin: 8px;\n}\n\n#counter-values-bar {\n    flex: 0 0 20px;\n    border-top: solid 1px lightgray;\n    width: 100%;\n    overflow: hidden;\n    line-height: 18px;\n}\n\n.image-preview-container {\n    background: transparent;\n    text-align: left;\n    border-spacing: 0;\n}\n\n.image-preview-container img {\n    max-width: 100px;\n    max-height: 100px;\n    background-image: url(Images/checker.png);\n    -webkit-user-select: text;\n    -webkit-user-drag: auto;\n}\n\n.image-container {\n    padding: 0;\n}\n\n.timeline-filters-header {\n    overflow: hidden;\n    flex: none;\n}\n\n.timeline-details {\n    vertical-align: top;\n}\n\n.timeline-details-title {\n    border-bottom: 1px solid #B8B8B8;\n    font-weight: bold;\n    padding-bottom: 5px;\n    padding-top: 0;\n    white-space: nowrap;\n}\n\n.timeline-details-row-title {\n    font-weight: bold;\n    text-align: right;\n    white-space: nowrap;\n}\n\n.timeline-details-row-data {\n    white-space: nowrap;\n}\n\n.timeline-details-view {\n    color: #333;\n    overflow: hidden;\n}\n\n.timeline-details-view-body {\n    flex: auto;\n    overflow: auto;\n    position: relative;\n    background-color: #f3f3f3;\n}\n\n.timeline-details-view-block {\n    flex: none;\n    display: flex;\n    box-shadow: #ccc 1px 1px 3px;\n    background-color: white;\n    flex-direction: column;\n    margin: 3px 4px;\n    padding-bottom: 5px;\n}\n\n.timeline-details-view-row {\n    padding-left: 10px;\n    flex-direction: row;\n    display: flex;\n    line-height: 20px;\n}\n\n.timeline-details-view-block .timeline-details-stack-values {\n    flex-direction: column !important;\n}\n\n.timeline-details-chip-title {\n    font-size: 13px;\n    padding: 8px;\n    display: flex;\n    align-items: center;\n}\n\n.timeline-details-chip-title > div {\n    width: 12px;\n    height: 12px;\n    border: 1px solid rgba(0, 0, 0, 0.2);\n    display: inline-block;\n    margin-right: 4px;\n    content: \" \";\n}\n\n.timeline-details-view-row-title {\n    color: rgb(152, 152, 152);\n    overflow: hidden;\n}\n\n.timeline-details-warning {\n    background-color: rgba(250, 209, 209, 0.48);\n}\n\n.timeline-details-warning .timeline-details-view-row-title {\n    color: red;\n}\n\n.timeline-details-warning .timeline-details-view-row-value {\n    white-space: nowrap;\n    overflow: hidden;\n    text-overflow: ellipsis;\n}\n\n.timeline-details-view-row-value {\n    -webkit-user-select: text;\n    white-space: nowrap;\n    text-overflow: ellipsis;\n    overflow: hidden;\n    padding-left: 10px;\n}\n\n.timeline-details-view-row-value .stack-preview-container {\n    line-height: 11px;\n}\n\n.timeline-details-view-row-value .timeline-details-warning-marker {\n    white-space: nowrap;\n    text-overflow: ellipsis;\n    overflow: hidden;\n}\n\n.timeline-details-view-pie-chart-wrapper {\n    margin: 4px 0;\n}\n\n.timeline-details-view-pie-chart {\n    margin-top: 5px;\n}\n\n.timeline-details-view-pie-chart-total {\n    width: 100px;\n    margin-top: 10px;\n    text-align: center;\n}\n\n.timeline-details-view-row-stack-trace {\n    padding: 4px 0;\n    line-height: inherit;\n}\n\n.timeline-details-view-row-stack-trace div {\n    white-space: nowrap;\n    text-overflow: ellipsis;\n    line-height: 12px;\n}\n\n.timeline-aggregated-info-legend > div {\n    overflow: hidden;\n    white-space: nowrap;\n    text-overflow: ellipsis;\n}\n\n.timeline-flamechart {\n    overflow: hidden;\n}\n\n.timeline-status-pane.banner {\n    text-align: left !important;\n}\n\n.layer-tree,\n.profiler-log-view {\n    overflow: auto;\n}\n\n.layers-3d-view {\n    overflow: hidden;\n    -webkit-user-select: none;\n}\n\n.layers-3d-view canvas {\n    flex: 1 1;\n}\n\n.transform-control-panel {\n    white-space: nowrap;\n    flex: none;\n}\n\n.layer-details-view table td {\n    padding-left: 8px;\n}\n\n.layer-details-view table td:first-child {\n    font-weight: bold;\n}\n\n.layer-details-view .scroll-rect.active {\n    background-color: rgba(100, 100, 100, 0.2);\n}\n\n.paint-profiler-overview .banner {\n    z-index: 500;\n}\n\n.paint-profiler-canvas-container {\n    flex: auto;\n    position: relative;\n}\n\n.paint-profiler-overview {\n    background-color: #eee;\n}\n\n.paint-profiler-pie-chart {\n    width: 60px !important;\n    height: 60px !important;\n    padding: 2px;\n    overflow: hidden;\n    font-size: 10px;\n}\n\n.paint-profiler-canvas-container canvas {\n    z-index: 200;\n    background-color: white;\n    opacity: 0.95;\n    height: 100%;\n    width: 100%;\n}\n\n.paint-profiler-canvas-container .overview-grid-dividers-background,\n.paint-profiler-canvas-container .overview-grid-window {\n    bottom: 0;\n    height: auto;\n}\n\n.paint-profiler-canvas-container .overview-grid-window-resizer {\n    z-index: 2000;\n}\n\n.paint-profiler-image-view {\n    overflow: hidden;\n}\n\n.paint-profiler-image-view .paint-profiler-image-container {\n    -webkit-transform-origin: 0 0;\n}\n\n.paint-profiler-image-view .paint-profiler-image-container div {\n    border-color: rgba(100, 100, 100, 0.4);\n    border-style: solid;\n    z-index: 100;\n    position: absolute;\n    top: 0;\n    left: 0;\n}\n\n.paint-profiler-image-view img {\n    border: solid 1px black;\n}\n\n.layer-details-view ul {\n    list-style: none;\n    -webkit-padding-start: 0;\n    -webkit-margin-before: 0;\n    -webkit-margin-after: 0;\n}\n\n.layer-details-view a {\n    padding: 8px;\n    display: block;\n}\n\n.timeline-layers-view > div:last-child,\n.timeline-layers-view-properties > div:last-child {\n    background-color: #eee;\n}\n\n.timeline-layers-view-properties table {\n    width: 100%;\n    border-collapse: collapse;\n}\n\n.timeline-layers-view-properties td {\n    border: 1px solid #e1e1e1;\n    line-height: 22px;\n}\n\n.timeline-paint-profiler-log-split > div:last-child {\n    background-color: #eee;\n    z-index: 0;\n}\n\n.timeline-gap {\n    flex: none;\n}\n\n.timeline-filmstrip-preview {\n    margin-top: 10px;\n    max-width: 200px;\n    max-height: 200px;\n    cursor: pointer;\n    border: 1px solid #ddd;\n}\n\n.timeline-overview-popover .frame .time {\n    display: none;\n}\n\n.timeline-overview-popover .frame .thumbnail img {\n    max-width: 200px;\n}\n\n.timeline-tree-view {\n    display: flex;\n    overflow: hidden;\n}\n\n.timeline-tree-view > .toolbar {\n    border-bottom: 1px solid #dadada;\n}\n\n.timeline-tree-view .data-grid {\n    border: none;\n    flex: auto;\n}\n\n.timeline-tree-view .data-grid .data-container {\n    overflow-y: scroll;\n}\n\n.timeline-tree-view .data-grid.data-grid-fits-viewport .corner {\n    display: table-cell;\n}\n\n.timeline-tree-view .data-grid table.data {\n    background: white;\n}\n\n.timeline-tree-view .data-grid tr:not(.selected) .highlight {\n    background-color: rgb(255, 230, 179);\n}\n\n.timeline-tree-view .data-grid tr:hover td:not(.bottom-filler-td) {\n    background-color: rgba(0, 0, 0, 0.1);\n}\n\n.timeline-tree-view .data-grid td.numeric-column {\n    text-align: right;\n    position: relative;\n}\n\n.timeline-tree-view .data-grid div.background-percent-bar {\n    float: right;\n}\n\n.timeline-tree-view .data-grid span.percent-column {\n    color: #888;\n    width: 44px;\n    display: inline-block;\n}\n\n.timeline-tree-view .data-grid tr.selected span {\n    color: inherit;\n}\n\n.timeline-tree-view .data-grid .name-container {\n    display: flex;\n    align-items: center;\n}\n\n.timeline-tree-view .data-grid .name-container div {\n    flex: none;\n}\n\n.timeline-tree-view .data-grid .name-container .activity-icon {\n    width: 10px;\n    height: 10px;\n    margin: 0 4px 0 2px;\n    border: 1px solid rgba(0, 0, 0, 0.05);\n}\n\n.timeline-tree-view .data-grid .name-container .activity-warning::after {\n    content: \"[deopt]\";\n    margin: 0 4px;\n    line-height: 12px;\n    font-size: 10px;\n    color: #777;\n}\n\n.timeline-tree-view .data-grid tr.selected .name-container .activity-warning::after {\n    color: white;\n}\n\n.timeline-tree-view .data-grid .name-container .activity-link {\n    flex: auto;\n    text-align: right;\n    overflow: hidden;\n    text-overflow: ellipsis;\n    margin-left: 5px;\n}\n\n.timeline-tree-view .data-grid .background-bar-container {\n    position: absolute;\n    left: 3px;\n    right: 0;\n}\n\n.timeline-tree-view .data-grid .background-bar {\n    float: right;\n    height: 15px;\n    background-color: hsla(43, 84%, 64%, 0.2);\n    border-bottom: 1px solid hsl(43, 84%, 64%);\n}\n\n.timeline-tree-view .data-grid .selected .background-bar {\n    background-color: rgba(255, 255, 255, 0.25);\n    border-bottom-color: transparent;\n}\n\n.timeline-tree-view .timeline-details-view-body .banner {\n    background-color: inherit;\n}\n\n.timeline-details #filter-input-field {\n    width: 120px;\n}\n\n.timeline-tree-view .data-grid .header-container {\n    height: 21px;\n}\n\n.timeline-tree-view .data-grid .data-container {\n    top: 21px;\n}\n\n.timeline-tree-view .data-grid th {\n    border-bottom: 1px solid #ddd;\n    background-color: #f3f3f3\n}\n\n.timeline-stack-view-header {\n    height: 26px;\n    background-color: white;\n    padding: 6px 10px;\n    color: #5a5a5a;\n}\n\n/*# sourceURL=timeline/timelinePanel.css */";Runtime.cachedResources["timeline/timelineStatusDialog.css"]="/*\n * Copyright (c) 2015 The Chromium Authors. All rights reserved.\n * Use of this source code is governed by a BSD-style license that can be\n * found in the LICENSE file.\n */\n\n.timeline-status-dialog {\n    display: flex;\n    flex-direction: column;\n    padding: 12px 16px;\n    align-self: center;\n    background-color: white;\n    border: 1px solid lightgrey;\n    box-shadow: grey 0 0 14px;\n    margin-top: -1px;\n}\n\n.status-dialog-line {\n    margin: 2px;\n    height: 14px;\n    display: flex;\n    align-items: baseline;\n}\n\n.status-dialog-line .label {\n    display: inline-block;\n    width: 80px;\n    text-align: right;\n    color: #aaa;\n    margin-right: 10px;\n}\n\n.timeline-status-dialog .progress .indicator-container {\n    display: inline-block;\n    width: 200px;\n    height: 8px;\n    background-color: #f4f4f4;\n    display: inline-block;\n    margin: 0 10px 0 0;\n}\n\n.timeline-status-dialog .progress .indicator {\n    background-color: rgb(112, 166, 255);\n    height: 100%;\n    width: 0;\n    margin: 0;\n}\n\n.timeline-status-dialog .stop-button {\n    margin-top: 8px;\n    height: 100%;\n    align-self: center;\n}\n\n/*# sourceURL=timeline/timelineStatusDialog.css */";
+{this._targets.remove(target,true);},__proto__:WebInspector.Object.prototype};Runtime.cachedResources["timeline/invalidationsTree.css"]="/*\n * Copyright 2015 The Chromium Authors. All rights reserved.\n * Use of this source code is governed by a BSD-style license that can be\n * found in the LICENSE file.\n */\n\n.header, .children, .content {\n    min-height: initial;\n    line-height: initial;\n}\n\n/* This TreeElement is always expanded and has no arrow.   */\n/* FIXME(crbug.com/475618): Implement this in TreeElement. */\n.children li::before {\n    display: none;\n}\n\n.content {\n    margin-bottom: 4px;\n}\n\n.content .stack-preview-container {\n    margin-left: 8px;\n}\n\n.content .node-list {\n    margin-left: 10px;\n}\n\n/*# sourceURL=timeline/invalidationsTree.css */";Runtime.cachedResources["timeline/timelineFlamechartPopover.css"]="/*\n * Copyright (c) 2015 The Chromium Authors. All rights reserved.\n * Use of this source code is governed by a BSD-style license that can be\n * found in the LICENSE file.\n */\n\n.timeline-flamechart-popover span {\n    margin-right: 5px;\n}\n\n.timeline-flamechart-popover span.timeline-info-network-time {\n    color: #009;\n}\n\n.timeline-flamechart-popover span.timeline-info-time {\n    color: #282;\n}\n\n.timeline-flamechart-popover span.timeline-info-warning {\n    color: #e44;\n}\n\n.timeline-flamechart-popover span.timeline-info-warning * {\n    color: inherit;\n}\n\n/*# sourceURL=timeline/timelineFlamechartPopover.css */";Runtime.cachedResources["timeline/timelinePanel.css"]="/*\n * Copyright (C) 2006, 2007, 2008 Apple Inc.  All rights reserved.\n * Copyright (C) 2009 Anthony Ricaud <rik@webkit.org>\n *\n * Redistribution and use in source and binary forms, with or without\n * modification, are permitted provided that the following conditions\n * are met:\n *\n * 1.  Redistributions of source code must retain the above copyright\n *     notice, this list of conditions and the following disclaimer.\n * 2.  Redistributions in binary form must reproduce the above copyright\n *     notice, this list of conditions and the following disclaimer in the\n *     documentation and/or other materials provided with the distribution.\n * 3.  Neither the name of Apple Computer, Inc. (\"Apple\") nor the names of\n *     its contributors may be used to endorse or promote products derived\n *     from this software without specific prior written permission.\n *\n * THIS SOFTWARE IS PROVIDED BY APPLE AND ITS CONTRIBUTORS \"AS IS\" AND ANY\n * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED\n * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE\n * DISCLAIMED. IN NO EVENT SHALL APPLE OR ITS CONTRIBUTORS BE LIABLE FOR ANY\n * DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES\n * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;\n * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND\n * ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT\n * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF\n * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.\n */\n\n.panel.timeline > .toolbar {\n    border-bottom: 1px solid #dadada;\n}\n\n#timeline-overview-panel {\n    flex: none;\n    position: relative;\n    border-bottom: 1px solid rgb(140, 140, 140);\n}\n\n.panel.timeline .banner,\n.panel.layers .banner {\n    color: #777;\n    background-color: white;\n    display: flex;\n    justify-content: center;\n    align-items: center;\n    text-align: center;\n    padding: 20px;\n    position: absolute;\n    top: 0;\n    right: 0;\n    bottom: 0;\n    left: 0;\n    font-size: 13px;\n    overflow: auto;\n    z-index: 500;\n}\n\n.panel.timeline .banner a,\n.panel.layers .banner a {\n    color: inherit;\n}\n\n#timeline-overview-panel .timeline-graph-bar {\n    pointer-events: none;\n}\n\n#timeline-overview-grid {\n    background-color: rgb(255, 255, 255);\n}\n\n#timeline-overview-grid .timeline-grid-header {\n    height: 12px;\n}\n\n#timeline-overview-grid .resources-dividers-label-bar {\n    pointer-events: auto;\n    height: 12px;\n}\n\n#timeline-overview-grid .resources-divider-label {\n    top: 1px;\n}\n\n.timeline-details-split {\n    flex: auto;\n}\n\n.timeline-view-stack {\n    flex: auto;\n    display: flex;\n}\n\n#timeline-container .webkit-html-external-link,\n#timeline-container .webkit-html-resource-link {\n    color: inherit;\n}\n\n.timeline-graph-side.hovered {\n    background-color: rgba(0, 0, 0, 0.05) !important;\n}\n\n.timeline.panel .status-pane-container {\n    z-index: 1000;\n    pointer-events: none;\n    display: flex;\n    align-items: center;\n}\n\n.timeline.panel .status-pane-container.tinted {\n    background-color: hsla(0, 0%, 90%, 0.8);\n    pointer-events: auto;\n}\n\n#timeline-overview-panel .overview-strip {\n    margin-top: 2px;\n    justify-content: center;\n}\n\n#timeline-overview-panel .overview-strip .timeline-overview-strip-title {\n    color: #666;\n    font-size: 10px;\n    font-weight: bold;\n    z-index: 100;\n    background-color: rgba(255, 255, 255, 0.7);\n    padding: 0 4px;\n    position: absolute;\n    top: 0;\n    right: 0;\n}\n\n#timeline-overview-cpu-activity {\n    flex-basis: 25px;\n}\n\n#timeline-overview-network,\n#timeline-overview-framerate {\n    flex-basis: 20px;\n}\n\n#timeline-overview-filmstrip {\n    flex-basis: 40px;\n}\n\n#timeline-overview-memory {\n    flex-basis: 22px;\n}\n\n#timeline-overview-framerate::before,\n#timeline-overview-network::before,\n#timeline-overview-cpu-activity::before {\n    content: \"\";\n    position: absolute;\n    left: 0;\n    right: 0;\n    bottom: 0;\n    border-bottom: 1px solid hsla(0, 0%, 0%, 0.06);\n    z-index: -200;\n}\n\n.overview-strip .background {\n    z-index: -10;\n}\n\n#timeline-overview-responsiveness {\n    flex-basis: 6px;\n    margin-top: 1px !important;\n}\n\n#timeline-overview-input {\n    flex-basis: 6px;\n}\n\n#timeline-overview-pane {\n    flex: auto;\n    position: relative;\n    overflow: hidden;\n}\n\n#timeline-overview-container {\n    display: flex;\n    flex-direction: column;\n    flex: none;\n    position: relative;\n    overflow: hidden;\n}\n\n#timeline-overview-container canvas {\n    width: 100%;\n    height: 100%;\n}\n\n#timeline-graphs {\n    position: absolute;\n    left: 0;\n    right: 0;\n    max-height: 100%;\n    top: 20px;\n}\n\n.timeline-aggregated-legend-title {\n    display: inline-block;\n}\n\n.timeline-aggregated-legend-value {\n    display: inline-block;\n    width: 70px;\n    text-align: right;\n}\n\n.timeline-aggregated-legend-swatch {\n    display: inline-block;\n    width: 11px;\n    height: 11px;\n    margin: 0 6px;\n    position: relative;\n    top: 1px;\n    border: 1px solid rgba(0, 0, 0, 0.2);\n}\n\n.popover ul {\n    margin: 0;\n    padding: 0;\n    list-style-type: none;\n}\n\n#resources-container-content {\n    overflow: hidden;\n    min-height: 100%;\n}\n\n.timeline-toolbar-resizer {\n    background-image: url(Images/toolbarResizerVertical.png);\n    background-repeat: no-repeat;\n    background-position: right center, center;\n}\n\n.memory-graph-label {\n    position: absolute;\n    right: 0;\n    bottom: 0;\n    font-size: 9px;\n    color: #888;\n    white-space: nowrap;\n    padding: 0 4px;\n    background-color: hsla(0, 0%, 100%, 0.8);\n}\n\n#memory-graphs-canvas-container {\n    overflow: hidden;\n    flex: auto;\n    position: relative;\n}\n\n#memory-counters-graph {\n    flex: auto;\n}\n\n#memory-graphs-canvas-container .memory-counter-marker {\n    position: absolute;\n    border-radius: 3px;\n    width: 5px;\n    height: 5px;\n    margin-left: -3px;\n    margin-top: -2px;\n}\n\n#memory-graphs-container .memory-counter-selector-swatches {\n    flex: 0 0 24px;\n    padding: 5px 0;\n    background-color: #eee;\n    border-bottom: 1px solid #ddd;\n}\n\n.memory-counter-selector-info {\n    flex: 0 0 auto;\n    margin-left: 5px;\n    white-space: nowrap;\n}\n\n.memory-counter-selector-info .range {\n    margin: 0 4px;\n    align-items: center;\n    display: inline-flex;\n}\n\n.memory-counter-value {\n    margin: 8px;\n}\n\n#counter-values-bar {\n    flex: 0 0 20px;\n    border-top: solid 1px lightgray;\n    width: 100%;\n    overflow: hidden;\n    line-height: 18px;\n}\n\n.image-preview-container {\n    background: transparent;\n    text-align: left;\n    border-spacing: 0;\n}\n\n.image-preview-container img {\n    max-width: 100px;\n    max-height: 100px;\n    background-image: url(Images/checker.png);\n    -webkit-user-select: text;\n    -webkit-user-drag: auto;\n}\n\n.image-container {\n    padding: 0;\n}\n\n.timeline-filters-header {\n    overflow: hidden;\n    flex: none;\n}\n\n.timeline-details {\n    vertical-align: top;\n}\n\n.timeline-details-title {\n    border-bottom: 1px solid #B8B8B8;\n    font-weight: bold;\n    padding-bottom: 5px;\n    padding-top: 0;\n    white-space: nowrap;\n}\n\n.timeline-details-row-title {\n    font-weight: bold;\n    text-align: right;\n    white-space: nowrap;\n}\n\n.timeline-details-row-data {\n    white-space: nowrap;\n}\n\n.timeline-details-view {\n    color: #333;\n    overflow: hidden;\n}\n\n.timeline-details-view-body {\n    flex: auto;\n    overflow: auto;\n    position: relative;\n    background-color: #f3f3f3;\n}\n\n.timeline-details-view-block {\n    flex: none;\n    display: flex;\n    background-color: white;\n    flex-direction: column;\n    padding-bottom: 5px;\n    border-bottom: 1px solid #ccc;\n}\n\n.timeline-details-view-row {\n    padding-left: 10px;\n    flex-direction: row;\n    display: flex;\n    line-height: 20px;\n}\n\n.timeline-details-view-block .timeline-details-stack-values {\n    flex-direction: column !important;\n}\n\n.timeline-details-chip-title {\n    font-size: 13px;\n    padding: 8px;\n    display: flex;\n    align-items: center;\n}\n\n.timeline-details-chip-title > div {\n    width: 12px;\n    height: 12px;\n    border: 1px solid rgba(0, 0, 0, 0.2);\n    display: inline-block;\n    margin-right: 4px;\n    content: \" \";\n}\n\n.timeline-details-view-row-title {\n    color: rgb(152, 152, 152);\n    overflow: hidden;\n}\n\n.timeline-details-warning {\n    background-color: rgba(250, 209, 209, 0.48);\n}\n\n.timeline-details-warning .timeline-details-view-row-title {\n    color: red;\n}\n\n.timeline-details-warning .timeline-details-view-row-value {\n    white-space: nowrap;\n    overflow: hidden;\n    text-overflow: ellipsis;\n}\n\n.timeline-details-view-row-value {\n    -webkit-user-select: text;\n    white-space: nowrap;\n    text-overflow: ellipsis;\n    overflow: hidden;\n    padding-left: 10px;\n}\n\n.timeline-details-view-row-value .stack-preview-container {\n    line-height: 11px;\n}\n\n.timeline-details-view-row-value .timeline-details-warning-marker {\n    white-space: nowrap;\n    text-overflow: ellipsis;\n    overflow: hidden;\n}\n\n.timeline-details-view-pie-chart-wrapper {\n    margin: 4px 0;\n}\n\n.timeline-details-view-pie-chart {\n    margin-top: 5px;\n}\n\n.timeline-details-view-pie-chart-total {\n    width: 100px;\n    margin-top: 10px;\n    text-align: center;\n}\n\n.timeline-details-view-row-stack-trace {\n    padding: 4px 0;\n    line-height: inherit;\n}\n\n.timeline-details-view-row-stack-trace div {\n    white-space: nowrap;\n    text-overflow: ellipsis;\n    line-height: 12px;\n}\n\n.timeline-aggregated-info-legend > div {\n    overflow: hidden;\n    white-space: nowrap;\n    text-overflow: ellipsis;\n}\n\n.timeline-flamechart {\n    overflow: hidden;\n}\n\n.timeline-status-pane.banner {\n    text-align: left !important;\n}\n\n.layer-tree,\n.profiler-log-view {\n    overflow: auto;\n}\n\n.layers-3d-view {\n    overflow: hidden;\n    -webkit-user-select: none;\n}\n\n.layers-3d-view canvas {\n    flex: 1 1;\n}\n\n.transform-control-panel {\n    white-space: nowrap;\n    flex: none;\n}\n\n.layer-details-view table td {\n    padding-left: 8px;\n}\n\n.layer-details-view table td:first-child {\n    font-weight: bold;\n}\n\n.layer-details-view .scroll-rect.active {\n    background-color: rgba(100, 100, 100, 0.2);\n}\n\n.paint-profiler-overview .banner {\n    z-index: 500;\n}\n\n.paint-profiler-canvas-container {\n    flex: auto;\n    position: relative;\n}\n\n.paint-profiler-overview {\n    background-color: #eee;\n}\n\n.paint-profiler-pie-chart {\n    width: 60px !important;\n    height: 60px !important;\n    padding: 2px;\n    overflow: hidden;\n    font-size: 10px;\n}\n\n.paint-profiler-canvas-container canvas {\n    z-index: 200;\n    background-color: white;\n    opacity: 0.95;\n    height: 100%;\n    width: 100%;\n}\n\n.paint-profiler-canvas-container .overview-grid-dividers-background,\n.paint-profiler-canvas-container .overview-grid-window {\n    bottom: 0;\n    height: auto;\n}\n\n.paint-profiler-canvas-container .overview-grid-window-resizer {\n    z-index: 2000;\n}\n\n.paint-profiler-image-view {\n    overflow: hidden;\n}\n\n.paint-profiler-image-view .paint-profiler-image-container {\n    -webkit-transform-origin: 0 0;\n}\n\n.paint-profiler-image-view .paint-profiler-image-container div {\n    border-color: rgba(100, 100, 100, 0.4);\n    border-style: solid;\n    z-index: 100;\n    position: absolute;\n    top: 0;\n    left: 0;\n}\n\n.paint-profiler-image-view img {\n    border: solid 1px black;\n}\n\n.layer-details-view ul {\n    list-style: none;\n    -webkit-padding-start: 0;\n    -webkit-margin-before: 0;\n    -webkit-margin-after: 0;\n}\n\n.layer-details-view a {\n    padding: 8px;\n    display: block;\n}\n\n.timeline-layers-view > div:last-child,\n.timeline-layers-view-properties > div:last-child {\n    background-color: #eee;\n}\n\n.timeline-layers-view-properties table {\n    width: 100%;\n    border-collapse: collapse;\n}\n\n.timeline-layers-view-properties td {\n    border: 1px solid #e1e1e1;\n    line-height: 22px;\n}\n\n.timeline-paint-profiler-log-split > div:last-child {\n    background-color: #eee;\n    z-index: 0;\n}\n\n.timeline-gap {\n    flex: none;\n}\n\n.timeline-filmstrip-preview {\n    margin-top: 10px;\n    max-width: 200px;\n    max-height: 200px;\n    cursor: pointer;\n    border: 1px solid #ddd;\n}\n\n.timeline-overview-popover .frame .time {\n    display: none;\n}\n\n.timeline-overview-popover .frame .thumbnail img {\n    max-width: 200px;\n}\n\n.timeline-tree-view {\n    display: flex;\n    overflow: hidden;\n}\n\n.timeline-tree-view > .toolbar {\n    border-bottom: 1px solid #dadada;\n}\n\n.timeline-tree-view .data-grid {\n    border: none;\n    flex: auto;\n}\n\n.timeline-tree-view .data-grid .data-container {\n    overflow-y: scroll;\n}\n\n.timeline-tree-view .data-grid.data-grid-fits-viewport .corner {\n    display: table-cell;\n}\n\n.timeline-tree-view .data-grid table.data {\n    background: white;\n}\n\n.timeline-tree-view .data-grid tr:not(.selected) .highlight {\n    background-color: rgb(255, 230, 179);\n}\n\n.timeline-tree-view .data-grid tr:hover td:not(.bottom-filler-td) {\n    background-color: rgba(0, 0, 0, 0.1);\n}\n\n.timeline-tree-view .data-grid td.numeric-column {\n    text-align: right;\n    position: relative;\n}\n\n.timeline-tree-view .data-grid div.background-percent-bar {\n    float: right;\n}\n\n.timeline-tree-view .data-grid span.percent-column {\n    color: #888;\n    width: 44px;\n    display: inline-block;\n}\n\n.timeline-tree-view .data-grid tr.selected span {\n    color: inherit;\n}\n\n.timeline-tree-view .data-grid .name-container {\n    display: flex;\n    align-items: center;\n}\n\n.timeline-tree-view .data-grid .name-container div {\n    flex: none;\n}\n\n.timeline-tree-view .data-grid .name-container .activity-icon {\n    width: 10px;\n    height: 10px;\n    margin: 0 4px 0 2px;\n    border: 1px solid rgba(0, 0, 0, 0.05);\n}\n\n.timeline-tree-view .data-grid .name-container .activity-warning::after {\n    content: \"[deopt]\";\n    margin: 0 4px;\n    line-height: 12px;\n    font-size: 10px;\n    color: #777;\n}\n\n.timeline-tree-view .data-grid tr.selected .name-container .activity-warning::after {\n    color: white;\n}\n\n.timeline-tree-view .data-grid .name-container .activity-link {\n    flex: auto;\n    text-align: right;\n    overflow: hidden;\n    text-overflow: ellipsis;\n    margin-left: 5px;\n}\n\n.timeline-tree-view .data-grid .background-bar-container {\n    position: absolute;\n    left: 3px;\n    right: 0;\n}\n\n.timeline-tree-view .data-grid .background-bar {\n    float: right;\n    height: 15px;\n    background-color: hsla(43, 84%, 64%, 0.2);\n    border-bottom: 1px solid hsl(43, 84%, 64%);\n}\n\n.timeline-tree-view .data-grid .selected .background-bar {\n    background-color: rgba(255, 255, 255, 0.25);\n    border-bottom-color: transparent;\n}\n\n.timeline-tree-view .timeline-details-view-body .banner {\n    background-color: inherit;\n}\n\n.timeline-details #filter-input-field {\n    width: 120px;\n}\n\n.timeline-tree-view .data-grid .header-container {\n    height: 21px;\n}\n\n.timeline-tree-view .data-grid .data-container {\n    top: 21px;\n}\n\n.timeline-tree-view .data-grid th {\n    border-bottom: 1px solid #ddd;\n    background-color: #f3f3f3\n}\n\n.timeline-stack-view-header {\n    height: 26px;\n    background-color: white;\n    padding: 6px 10px;\n    color: #5a5a5a;\n}\n\n/*# sourceURL=timeline/timelinePanel.css */";Runtime.cachedResources["timeline/timelineStatusDialog.css"]="/*\n * Copyright (c) 2015 The Chromium Authors. All rights reserved.\n * Use of this source code is governed by a BSD-style license that can be\n * found in the LICENSE file.\n */\n\n.timeline-status-dialog {\n    display: flex;\n    flex-direction: column;\n    padding: 12px 16px;\n    align-self: center;\n    background-color: white;\n    border: 1px solid lightgrey;\n    box-shadow: grey 0 0 14px;\n    margin-top: -1px;\n}\n\n.status-dialog-line {\n    margin: 2px;\n    height: 14px;\n    display: flex;\n    align-items: baseline;\n}\n\n.status-dialog-line .label {\n    display: inline-block;\n    width: 80px;\n    text-align: right;\n    color: #aaa;\n    margin-right: 10px;\n}\n\n.timeline-status-dialog .progress .indicator-container {\n    display: inline-block;\n    width: 200px;\n    height: 8px;\n    background-color: #f4f4f4;\n    display: inline-block;\n    margin: 0 10px 0 0;\n}\n\n.timeline-status-dialog .progress .indicator {\n    background-color: rgb(112, 166, 255);\n    height: 100%;\n    width: 0;\n    margin: 0;\n}\n\n.timeline-status-dialog .stop-button {\n    margin-top: 8px;\n    height: 100%;\n    align-self: center;\n}\n\n/*# sourceURL=timeline/timelineStatusDialog.css */";

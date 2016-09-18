@@ -17,7 +17,8 @@ return normalizedPath;if(path[0]==="/"&&normalizedPath)
 normalizedPath="/"+normalizedPath;if((path[path.length-1]==="/")||(segments[segments.length-1]===".")||(segments[segments.length-1]===".."))
 normalizedPath=normalizedPath+"/";return normalizedPath;}
 function loadScriptsPromise(scriptNames,base)
-{var promises=[];var urls=[];var sources=new Array(scriptNames.length);var scriptToEval=0;for(var i=0;i<scriptNames.length;++i){var scriptName=scriptNames[i];var sourceURL=(base||self._importScriptPathPrefix)+scriptName;var schemaIndex=sourceURL.indexOf("://")+3;sourceURL=sourceURL.substring(0,schemaIndex)+normalizePath(sourceURL.substring(schemaIndex));if(_loadedScripts[sourceURL])
+{var promises=[];var urls=[];var sources=new Array(scriptNames.length);var scriptToEval=0;for(var i=0;i<scriptNames.length;++i){var scriptName=scriptNames[i];var sourceURL=(base||self._importScriptPathPrefix)+scriptName;var schemaIndex=sourceURL.indexOf("://")+3;var pathIndex=sourceURL.indexOf("/",schemaIndex);if(pathIndex===-1)
+pathIndex=sourceURL.length;sourceURL=sourceURL.substring(0,pathIndex)+normalizePath(sourceURL.substring(pathIndex));if(_loadedScripts[sourceURL])
 continue;urls.push(sourceURL);promises.push(loadResourcePromise(sourceURL).then(scriptSourceLoaded.bind(null,i),scriptSourceLoaded.bind(null,i,undefined)));}
 return Promise.all(promises).then(undefined);function scriptSourceLoaded(scriptNumber,scriptSource)
 {sources[scriptNumber]=scriptSource||"";while(typeof sources[scriptToEval]!=="undefined"){evaluateScript(urls[scriptToEval],sources[scriptToEval]);++scriptToEval;}}
@@ -190,7 +191,7 @@ Runtime.Experiment.prototype={isEnabled:function()
 {var queryParams=location.search;if(!queryParams)
 return;var params=queryParams.substring(1).split("&");for(var i=0;i<params.length;++i){var pair=params[i].split("=");var name=pair.shift();Runtime._queryParamsObject[name]=pair.join("=");}})();}
 Runtime.experiments=new Runtime.ExperimentsSupport();Runtime._remoteBase=Runtime.queryParam("remoteBase");{(function validateRemoteBase()
-{if(Runtime._remoteBase&&!Runtime._remoteBase.startsWith("https://chrome-devtools-frontend.appspot.com/"))
+{var remoteBaseRegexp=/^https:\/\/chrome-devtools-frontend\.appspot\.com\/serve_file\/@[0-9a-zA-Z]+\/?$/;if(Runtime._remoteBase&&!remoteBaseRegexp.test(Runtime._remoteBase))
 Runtime._remoteBase=null;})();}
 Runtime.resolveSourceURL=function(path)
 {var sourceURL=self.location.href;if(self.location.search)
@@ -229,4 +230,4 @@ function removePort(port)
 {if(!ports)
 return;var index=ports.indexOf(port);ports.splice(index,1);}
 Runtime.setSharedWorkerNewPortCallback(onNewPort);;applicationDescriptor={"has_html":false,"modules":[{"type":"autostart","name":"temp_storage_shared_worker"}]};if(!self.Runtime)
-self.importScripts('Runtime.js');Runtime.startSharedWorker("temp_storage_shared_worker");
+self.importScripts("Runtime.js");Runtime.startSharedWorker("temp_storage_shared_worker");

@@ -17,7 +17,8 @@ return normalizedPath;if(path[0]==="/"&&normalizedPath)
 normalizedPath="/"+normalizedPath;if((path[path.length-1]==="/")||(segments[segments.length-1]===".")||(segments[segments.length-1]===".."))
 normalizedPath=normalizedPath+"/";return normalizedPath;}
 function loadScriptsPromise(scriptNames,base)
-{var promises=[];var urls=[];var sources=new Array(scriptNames.length);var scriptToEval=0;for(var i=0;i<scriptNames.length;++i){var scriptName=scriptNames[i];var sourceURL=(base||self._importScriptPathPrefix)+scriptName;var schemaIndex=sourceURL.indexOf("://")+3;sourceURL=sourceURL.substring(0,schemaIndex)+normalizePath(sourceURL.substring(schemaIndex));if(_loadedScripts[sourceURL])
+{var promises=[];var urls=[];var sources=new Array(scriptNames.length);var scriptToEval=0;for(var i=0;i<scriptNames.length;++i){var scriptName=scriptNames[i];var sourceURL=(base||self._importScriptPathPrefix)+scriptName;var schemaIndex=sourceURL.indexOf("://")+3;var pathIndex=sourceURL.indexOf("/",schemaIndex);if(pathIndex===-1)
+pathIndex=sourceURL.length;sourceURL=sourceURL.substring(0,pathIndex)+normalizePath(sourceURL.substring(pathIndex));if(_loadedScripts[sourceURL])
 continue;urls.push(sourceURL);promises.push(loadResourcePromise(sourceURL).then(scriptSourceLoaded.bind(null,i),scriptSourceLoaded.bind(null,i,undefined)));}
 return Promise.all(promises).then(undefined);function scriptSourceLoaded(scriptNumber,scriptSource)
 {sources[scriptNumber]=scriptSource||"";while(typeof sources[scriptToEval]!=="undefined"){evaluateScript(urls[scriptToEval],sources[scriptToEval]);++scriptToEval;}}
@@ -190,7 +191,7 @@ Runtime.Experiment.prototype={isEnabled:function()
 {var queryParams=location.search;if(!queryParams)
 return;var params=queryParams.substring(1).split("&");for(var i=0;i<params.length;++i){var pair=params[i].split("=");var name=pair.shift();Runtime._queryParamsObject[name]=pair.join("=");}})();}
 Runtime.experiments=new Runtime.ExperimentsSupport();Runtime._remoteBase=Runtime.queryParam("remoteBase");{(function validateRemoteBase()
-{if(Runtime._remoteBase&&!Runtime._remoteBase.startsWith("https://chrome-devtools-frontend.appspot.com/"))
+{var remoteBaseRegexp=/^https:\/\/chrome-devtools-frontend\.appspot\.com\/serve_file\/@[0-9a-zA-Z]+\/?$/;if(Runtime._remoteBase&&!remoteBaseRegexp.test(Runtime._remoteBase))
 Runtime._remoteBase=null;})();}
 Runtime.resolveSourceURL=function(path)
 {var sourceURL=self.location.href;if(self.location.search)
@@ -248,7 +249,7 @@ String.prototype.compareTo=function(other)
 return 1;if(this<other)
 return-1;return 0;}
 String.prototype.removeURLFragment=function()
-{var fragmentIndex=this.indexOf("#");if(fragmentIndex==-1)
+{var fragmentIndex=this.indexOf("#");if(fragmentIndex===-1)
 fragmentIndex=this.length;return this.substring(0,fragmentIndex);}
 String.hashCode=function(string)
 {if(!string)
@@ -426,7 +427,7 @@ function createSearchRegex(query,caseSensitive,isRegex)
 if(!regexObject)
 regexObject=createPlainTextSearchRegex(query,regexFlags);return regexObject;}
 function createPlainTextSearchRegex(query,flags)
-{var regexSpecialCharacters=String.regexSpecialCharacters();var regex="";for(var i=0;i<query.length;++i){var c=query.charAt(i);if(regexSpecialCharacters.indexOf(c)!=-1)
+{var regexSpecialCharacters=String.regexSpecialCharacters();var regex="";for(var i=0;i<query.length;++i){var c=query.charAt(i);if(regexSpecialCharacters.indexOf(c)!==-1)
 regex+="\\";regex+=c;}
 return new RegExp(regex,flags||"");}
 function countRegexMatches(regex,content)
@@ -596,7 +597,7 @@ return result;}
 return traverseNode(traceTreeRaw,0,null);},serializeTraceTops:function()
 {if(this._traceTops)
 return this._traceTops;var result=this._traceTops=[];var functionInfos=this._functionInfos;for(var i=0;i<functionInfos.length;i++){var info=functionInfos[i];if(info.totalCount===0)
-continue;var nodeId=this._nextNodeId++;var isRoot=i==0;result.push(this._serializeNode(nodeId,info,info.totalCount,info.totalSize,info.totalLiveCount,info.totalLiveSize,!isRoot));this._collapsedTopNodeIdToFunctionInfo[nodeId]=info;}
+continue;var nodeId=this._nextNodeId++;var isRoot=i===0;result.push(this._serializeNode(nodeId,info,info.totalCount,info.totalSize,info.totalLiveCount,info.totalLiveSize,!isRoot));this._collapsedTopNodeIdToFunctionInfo[nodeId]=info;}
 result.sort(function(a,b){return b.size-a.size;});return result;},serializeCallers:function(nodeId)
 {var node=this._ensureBottomUpNode(nodeId);var nodesWithSingleCaller=[];while(node.callers().length===1){node=node.callers()[0];nodesWithSingleCaller.push(this._serializeCaller(node));}
 var branchingCallers=[];var callers=node.callers();for(var i=0;i<callers.length;i++){branchingCallers.push(this._serializeCaller(callers[i]));}
@@ -1017,14 +1018,9 @@ WebInspector.HeapSnapshotWorkerDispatcher.prototype={_findFunction:function(name
 {var path=name.split(".");var result=this._global;for(var i=0;i<path.length;++i)
 result=result[path[i]];return result;},sendEvent:function(name,data)
 {this._postMessage({eventName:name,data:data});},dispatchMessage:function(event)
-{var data=(event.data);var response={callId:data.callId};try{switch(data.disposition){case"create":{var constructorFunction=this._findFunction(data.methodName);this._objects[data.objectId]=new constructorFunction(this);break;}
-case"dispose":{delete this._objects[data.objectId];break;}
-case"getter":{var object=this._objects[data.objectId];var result=object[data.methodName];response.result=result;break;}
-case"factory":{var object=this._objects[data.objectId];var result=object[data.methodName].apply(object,data.methodArguments);if(result)
-this._objects[data.newObjectId]=result;response.result=!!result;break;}
-case"method":{var object=this._objects[data.objectId];response.result=object[data.methodName].apply(object,data.methodArguments);break;}
-case"evaluateForTest":{try{response.result=eval(data.source);}catch(e){response.result=e.toString();}
-break;}}}catch(e){response.error=e.toString();response.errorCallStack=e.stack;if(data.methodName)
+{var data=(event.data);var response={callId:data.callId};try{switch(data.disposition){case"create":var constructorFunction=this._findFunction(data.methodName);this._objects[data.objectId]=new constructorFunction(this);break;case"dispose":delete this._objects[data.objectId];break;case"getter":var object=this._objects[data.objectId];var result=object[data.methodName];response.result=result;break;case"factory":var object=this._objects[data.objectId];var result=object[data.methodName].apply(object,data.methodArguments);if(result)
+this._objects[data.newObjectId]=result;response.result=!!result;break;case"method":var object=this._objects[data.objectId];response.result=object[data.methodName].apply(object,data.methodArguments);break;case"evaluateForTest":try{response.result=eval(data.source);}catch(e){response.result=e.toString();}
+break;}}catch(e){response.error=e.toString();response.errorCallStack=e.stack;if(data.methodName)
 response.errorMethodName=data.methodName;}
 this._postMessage(response);}};;WebInspector.JSHeapSnapshot=function(profile,progress,showHiddenData)
 {this._nodeFlags={canBeQueried:1,detachedDOMTreeNode:2,pageObject:4,visitedMarkerMask:0x0ffff,visitedMarker:0x10000};this._lazyStringCache={};this._showHiddenData=showHiddenData;WebInspector.HeapSnapshot.call(this,profile,progress);}
@@ -1151,4 +1147,4 @@ WebInspector.JSHeapSnapshotRetainerEdge.prototype={clone:function()
 var dispatcher=new WebInspector.HeapSnapshotWorkerDispatcher(this,postMessageWrapper);function installMessageEventListener(listener)
 {self.addEventListener("message",listener,false);}
 installMessageEventListener(dispatcher.dispatchMessage.bind(dispatcher));;applicationDescriptor={"has_html":false,"modules":[{"type":"autostart","name":"heap_snapshot_worker"}]};if(!self.Runtime)
-self.importScripts('Runtime.js');Runtime.startWorker("heap_snapshot_worker");
+self.importScripts("Runtime.js");Runtime.startWorker("heap_snapshot_worker");

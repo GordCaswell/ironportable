@@ -1731,7 +1731,7 @@ WebInspector.CodeMirrorPositionHandle=function(codeMirror,pos)
 WebInspector.CodeMirrorPositionHandle.prototype={resolve:function()
 {var lineNumber=this._codeMirror.getLineNumber(this._lineHandle);if(typeof lineNumber!=="number")
 return null;return{lineNumber:lineNumber,columnNumber:this._columnNumber};},equal:function(positionHandle)
-{return positionHandle._lineHandle===this._lineHandle&&positionHandle._columnNumber==this._columnNumber&&positionHandle._codeMirror===this._codeMirror;}}
+{return positionHandle._lineHandle===this._lineHandle&&positionHandle._columnNumber===this._columnNumber&&positionHandle._codeMirror===this._codeMirror;}}
 WebInspector.CodeMirrorTextEditor.TokenHighlighter=function(textEditor,codeMirror)
 {this._textEditor=textEditor;this._codeMirror=codeMirror;}
 WebInspector.CodeMirrorTextEditor.TokenHighlighter.prototype={highlightSearchResults:function(regex,range)
@@ -1865,9 +1865,10 @@ size--;if(content.length>1&&content[content.length-2]==="=")
 size--;return size;},_contextMenu:function(event)
 {var contextMenu=new WebInspector.ContextMenu(event);if(!this._parsedURL.isDataURL())
 contextMenu.appendItem(WebInspector.UIString.capitalize("Copy ^image URL"),this._copyImageURL.bind(this));if(this._imagePreviewElement.src)
-contextMenu.appendItem(WebInspector.UIString.capitalize("Copy ^image as Data URI"),this._copyImageAsDataURL.bind(this));contextMenu.appendItem(WebInspector.UIString.capitalize("Open ^image in ^new ^tab"),this._openInNewTab.bind(this));contextMenu.show();},_copyImageAsDataURL:function()
+contextMenu.appendItem(WebInspector.UIString.capitalize("Copy ^image as Data URI"),this._copyImageAsDataURL.bind(this));contextMenu.appendItem(WebInspector.UIString.capitalize("Open ^image in ^new ^tab"),this._openInNewTab.bind(this));contextMenu.appendItem(WebInspector.UIString.capitalize("Save\u2026"),this._saveImage.bind(this));contextMenu.show();},_copyImageAsDataURL:function()
 {InspectorFrontendHost.copyText(this._imagePreviewElement.src);},_copyImageURL:function()
-{InspectorFrontendHost.copyText(this._url);},_openInNewTab:function()
+{InspectorFrontendHost.copyText(this._url);},_saveImage:function()
+{var link=createElement("a");link.download=this._parsedURL.displayName;link.href=this._url;link.click();},_openInNewTab:function()
 {InspectorFrontendHost.openInNewTab(this._url);},__proto__:WebInspector.VBoxWithToolbarItems.prototype};WebInspector.SourceFrame=function(url,lazyContent)
 {WebInspector.VBoxWithToolbarItems.call(this);this._url=url;this._lazyContent=lazyContent;var textEditorDelegate=new WebInspector.TextEditorDelegateForSourceFrame(this);this._textEditor=new WebInspector.CodeMirrorTextEditor(this._url,textEditorDelegate);this._currentSearchResultIndex=-1;this._searchResults=[];this._textEditor.setReadOnly(!this.canEditSource());this._shortcuts={};this.element.addEventListener("keydown",this._handleKeyDown.bind(this),false);this._sourcePosition=new WebInspector.ToolbarText();this._searchableView=null;}
 WebInspector.SourceFrame.Events={ScrollChanged:"ScrollChanged",SelectionChanged:"SelectionChanged",JumpHappened:"JumpHappened"}

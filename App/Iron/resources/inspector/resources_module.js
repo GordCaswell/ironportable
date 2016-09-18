@@ -74,7 +74,7 @@ this._cookiesTable.detach();return;}
 if(!this._cookiesTable)
 this._cookiesTable=new WebInspector.CookiesTable(false,this._update.bind(this),this._showDeleteButton.bind(this));this._cookiesTable.setCookies(this._cookies);this._emptyWidget.detach();this._cookiesTable.show(this.element);this._treeElement.subtitle=String.sprintf(WebInspector.UIString("%d cookies (%s)"),this._cookies.length,Number.bytesToString(this._totalSize));this._clearButton.setVisible(true);this._deleteButton.setVisible(!!this._cookiesTable.selectedCookie());},_filterCookiesForDomain:function(allCookies)
 {var cookies=[];var resourceURLsForDocumentURL=[];this._totalSize=0;function populateResourcesForDocuments(resource)
-{var url=resource.documentURL.asParsedURL();if(url&&url.securityOrigin()==this._cookieDomain)
+{var url=resource.documentURL.asParsedURL();if(url&&url.securityOrigin()===this._cookieDomain)
 resourceURLsForDocumentURL.push(resource.url);}
 WebInspector.forAllResources(populateResourcesForDocuments.bind(this));for(var i=0;i<allCookies.length;++i){var pushed=false;var size=allCookies[i].size();for(var j=0;j<resourceURLsForDocumentURL.length;++j){var resourceURL=resourceURLsForDocumentURL[j];if(WebInspector.Cookies.cookieMatchesResourceURL(allCookies[i],resourceURL)){this._totalSize+=size;if(!pushed){pushed=true;cookies.push(allCookies[i]);}}}}
 return cookies;},clear:function()
@@ -100,7 +100,7 @@ this._model._agent.getDatabaseTableNames(this._id,sortingCallback);},executeSql:
 {function callback(error,columnNames,values,errorObj)
 {if(error){onError(error);return;}
 if(errorObj){var message;if(errorObj.message)
-message=errorObj.message;else if(errorObj.code==2)
+message=errorObj.message;else if(errorObj.code===2)
 message=WebInspector.UIString("Database no longer has expected version.");else
 message=WebInspector.UIString("An unexpected error %s occurred.",errorObj.code);onError(message);return;}
 onSuccess(columnNames,values);}
@@ -342,7 +342,7 @@ WebInspector.IDBDataView.prototype={_createDataGrid:function()
 {var keyPath=this._isIndex?this._index.keyPath:this._objectStore.keyPath;var columns=[];columns.push({id:"number",title:WebInspector.UIString("#"),width:"50px"});columns.push({id:"key",titleDOMFragment:this._keyColumnHeaderFragment(WebInspector.UIString("Key"),keyPath)});if(this._isIndex)
 columns.push({id:"primaryKey",titleDOMFragment:this._keyColumnHeaderFragment(WebInspector.UIString("Primary key"),this._objectStore.keyPath)});columns.push({id:"value",title:WebInspector.UIString("Value")});var dataGrid=new WebInspector.DataGrid(columns);return dataGrid;},_keyColumnHeaderFragment:function(prefix,keyPath)
 {var keyColumnHeaderFragment=createDocumentFragment();keyColumnHeaderFragment.createTextChild(prefix);if(keyPath===null)
-return keyColumnHeaderFragment;keyColumnHeaderFragment.createTextChild(" ("+WebInspector.UIString("Key path: "));if(Array.isArray(keyPath)){keyColumnHeaderFragment.createTextChild("[");for(var i=0;i<keyPath.length;++i){if(i!=0)
+return keyColumnHeaderFragment;keyColumnHeaderFragment.createTextChild(" ("+WebInspector.UIString("Key path: "));if(Array.isArray(keyPath)){keyColumnHeaderFragment.createTextChild("[");for(var i=0;i<keyPath.length;++i){if(i!==0)
 keyColumnHeaderFragment.createTextChild(", ");keyColumnHeaderFragment.appendChild(this._keyPathStringFragment(keyPath[i]));}
 keyColumnHeaderFragment.createTextChild("]");}else{var keyPathString=(keyPath);keyColumnHeaderFragment.appendChild(this._keyPathStringFragment(keyPathString));}
 keyColumnHeaderFragment.createTextChild(")");return keyColumnHeaderFragment;},_keyPathStringFragment:function(keyPathString)
@@ -765,7 +765,7 @@ this._updateSectionVisibility();section._scheduleUpdate();},_registrationDeleted
 {var registration=(event.data);var section=this._sections.get(registration);if(section)
 section._section.remove();this._sections.delete(registration);},__proto__:WebInspector.VBox.prototype}
 WebInspector.ServiceWorkersView.Section=function(manager,section,registration)
-{this._manager=manager;this._section=section;this._registration=registration;this._toolbar=section.createToolbar();this._toolbar.renderAsLinks();this._updateButton=new WebInspector.ToolbarButton(WebInspector.UIString("Update"),undefined,WebInspector.UIString("Update"));this._updateButton.addEventListener("click",this._updateButtonClicked.bind(this));this._toolbar.appendToolbarItem(this._updateButton);this._pushButton=new WebInspector.ToolbarButton(WebInspector.UIString("Emulate push event"),undefined,WebInspector.UIString("Push"));this._pushButton.addEventListener("click",this._pushButtonClicked.bind(this));this._toolbar.appendToolbarItem(this._pushButton);this._deleteButton=new WebInspector.ToolbarButton(WebInspector.UIString("Unregister service worker"),undefined,WebInspector.UIString("Unregister"));this._deleteButton.addEventListener("click",this._unregisterButtonClicked.bind(this));this._toolbar.appendToolbarItem(this._deleteButton);this._section.appendField(WebInspector.UIString("Source"));this._section.appendField(WebInspector.UIString("Status"));this._section.appendField(WebInspector.UIString("Clients"));this._section.appendField(WebInspector.UIString("Errors"));this._errorsList=this._wrapWidget(this._section.appendRow());this._errorsList.classList.add("service-worker-error-stack","monospace","hidden");this._linkifier=new WebInspector.Linkifier();this._clientInfoCache=new Map();for(var error of registration.errors)
+{this._manager=manager;this._section=section;this._registration=registration;this._toolbar=section.createToolbar();this._toolbar.renderAsLinks();this._updateButton=new WebInspector.ToolbarButton(WebInspector.UIString("Update"),undefined,WebInspector.UIString("Update"));this._updateButton.addEventListener("click",this._updateButtonClicked.bind(this));this._toolbar.appendToolbarItem(this._updateButton);this._pushButton=new WebInspector.ToolbarButton(WebInspector.UIString("Emulate push event"),undefined,WebInspector.UIString("Push"));this._pushButton.addEventListener("click",this._pushButtonClicked.bind(this));this._toolbar.appendToolbarItem(this._pushButton);this._syncButton=new WebInspector.ToolbarButton(WebInspector.UIString("Emulate background sync event"),undefined,WebInspector.UIString("Sync"));this._syncButton.addEventListener("click",this._syncButtonClicked.bind(this));this._toolbar.appendToolbarItem(this._syncButton);this._deleteButton=new WebInspector.ToolbarButton(WebInspector.UIString("Unregister service worker"),undefined,WebInspector.UIString("Unregister"));this._deleteButton.addEventListener("click",this._unregisterButtonClicked.bind(this));this._toolbar.appendToolbarItem(this._deleteButton);this._section.appendField(WebInspector.UIString("Source"));this._section.appendField(WebInspector.UIString("Status"));this._section.appendField(WebInspector.UIString("Clients"));this._section.appendField(WebInspector.UIString("Errors"));this._errorsList=this._wrapWidget(this._section.appendRow());this._errorsList.classList.add("service-worker-error-stack","monospace","hidden");this._linkifier=new WebInspector.Linkifier();this._clientInfoCache=new Map();for(var error of registration.errors)
 this._addError(error);this._throttler=new WebInspector.Throttler(500);}
 WebInspector.ServiceWorkersView.Section.prototype={_scheduleUpdate:function()
 {if(WebInspector.ServiceWorkersView._noThrottle){this._update();return;}
@@ -786,8 +786,8 @@ return Promise.resolve();},_addError:function(error)
 this._errorsList.firstElementChild.remove();message.appendChild(this._linkifier.linkifyScriptLocation(target,null,error.sourceURL,error.lineNumber));message.appendChild(createLabel("#"+error.versionId+": "+error.errorMessage,"error-icon"));},_unregisterButtonClicked:function()
 {this._manager.deleteRegistration(this._registration.id);},_updateButtonClicked:function()
 {this._manager.updateRegistration(this._registration.id);},_pushButtonClicked:function()
-{var data="Test push message from DevTools."
-this._manager.deliverPushMessage(this._registration.id,data);},_onClientInfo:function(element,targetInfo)
+{var data="Test push message from DevTools.";this._manager.deliverPushMessage(this._registration.id,data);},_syncButtonClicked:function()
+{var tag="test-tag-from-devtools";var lastChance=true;this._manager.dispatchSyncEvent(this._registration.id,tag,lastChance);},_onClientInfo:function(element,targetInfo)
 {if(!targetInfo)
 return;this._clientInfoCache.set(targetInfo.id,targetInfo);this._updateClientInfo(element,targetInfo);},_updateClientInfo:function(element,targetInfo)
 {if(!(targetInfo.isWebContents()||targetInfo.isFrame())){element.createTextChild(WebInspector.UIString("Worker: %s",targetInfo.url));return;}

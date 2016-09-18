@@ -17,7 +17,8 @@ return normalizedPath;if(path[0]==="/"&&normalizedPath)
 normalizedPath="/"+normalizedPath;if((path[path.length-1]==="/")||(segments[segments.length-1]===".")||(segments[segments.length-1]===".."))
 normalizedPath=normalizedPath+"/";return normalizedPath;}
 function loadScriptsPromise(scriptNames,base)
-{var promises=[];var urls=[];var sources=new Array(scriptNames.length);var scriptToEval=0;for(var i=0;i<scriptNames.length;++i){var scriptName=scriptNames[i];var sourceURL=(base||self._importScriptPathPrefix)+scriptName;var schemaIndex=sourceURL.indexOf("://")+3;sourceURL=sourceURL.substring(0,schemaIndex)+normalizePath(sourceURL.substring(schemaIndex));if(_loadedScripts[sourceURL])
+{var promises=[];var urls=[];var sources=new Array(scriptNames.length);var scriptToEval=0;for(var i=0;i<scriptNames.length;++i){var scriptName=scriptNames[i];var sourceURL=(base||self._importScriptPathPrefix)+scriptName;var schemaIndex=sourceURL.indexOf("://")+3;var pathIndex=sourceURL.indexOf("/",schemaIndex);if(pathIndex===-1)
+pathIndex=sourceURL.length;sourceURL=sourceURL.substring(0,pathIndex)+normalizePath(sourceURL.substring(pathIndex));if(_loadedScripts[sourceURL])
 continue;urls.push(sourceURL);promises.push(loadResourcePromise(sourceURL).then(scriptSourceLoaded.bind(null,i),scriptSourceLoaded.bind(null,i,undefined)));}
 return Promise.all(promises).then(undefined);function scriptSourceLoaded(scriptNumber,scriptSource)
 {sources[scriptNumber]=scriptSource||"";while(typeof sources[scriptToEval]!=="undefined"){evaluateScript(urls[scriptToEval],sources[scriptToEval]);++scriptToEval;}}
@@ -190,7 +191,7 @@ Runtime.Experiment.prototype={isEnabled:function()
 {var queryParams=location.search;if(!queryParams)
 return;var params=queryParams.substring(1).split("&");for(var i=0;i<params.length;++i){var pair=params[i].split("=");var name=pair.shift();Runtime._queryParamsObject[name]=pair.join("=");}})();}
 Runtime.experiments=new Runtime.ExperimentsSupport();Runtime._remoteBase=Runtime.queryParam("remoteBase");{(function validateRemoteBase()
-{if(Runtime._remoteBase&&!Runtime._remoteBase.startsWith("https://chrome-devtools-frontend.appspot.com/"))
+{var remoteBaseRegexp=/^https:\/\/chrome-devtools-frontend\.appspot\.com\/serve_file\/@[0-9a-zA-Z]+\/?$/;if(Runtime._remoteBase&&!remoteBaseRegexp.test(Runtime._remoteBase))
 Runtime._remoteBase=null;})();}
 Runtime.resolveSourceURL=function(path)
 {var sourceURL=self.location.href;if(self.location.search)
@@ -248,7 +249,7 @@ String.prototype.compareTo=function(other)
 return 1;if(this<other)
 return-1;return 0;}
 String.prototype.removeURLFragment=function()
-{var fragmentIndex=this.indexOf("#");if(fragmentIndex==-1)
+{var fragmentIndex=this.indexOf("#");if(fragmentIndex===-1)
 fragmentIndex=this.length;return this.substring(0,fragmentIndex);}
 String.hashCode=function(string)
 {if(!string)
@@ -426,7 +427,7 @@ function createSearchRegex(query,caseSensitive,isRegex)
 if(!regexObject)
 regexObject=createPlainTextSearchRegex(query,regexFlags);return regexObject;}
 function createPlainTextSearchRegex(query,flags)
-{var regexSpecialCharacters=String.regexSpecialCharacters();var regex="";for(var i=0;i<query.length;++i){var c=query.charAt(i);if(regexSpecialCharacters.indexOf(c)!=-1)
+{var regexSpecialCharacters=String.regexSpecialCharacters();var regex="";for(var i=0;i<query.length;++i){var c=query.charAt(i);if(regexSpecialCharacters.indexOf(c)!==-1)
 regex+="\\";regex+=c;}
 return new RegExp(regex,flags||"");}
 function countRegexMatches(regex,content)
@@ -699,13 +700,13 @@ node=node.parentNode;if(!node)
 return null;node=node.elementFromPoint(this.pageX,this.pageY);while(node&&node.shadowRoot)
 node=node.shadowRoot.elementFromPoint(this.pageX,this.pageY);return node;}
 Event.prototype.deepActiveElement=function()
-{var activeElement=this.target&&this.target.ownerDocument?this.target.ownerDocument.activeElement:null;while(activeElement&&activeElement.shadowRoot)
+{var activeElement=this.target&&this.target.ownerDocument?this.target.ownerDocument.activeElement:null;while(activeElement&&activeElement.shadowRoot&&activeElement.shadowRoot.activeElement)
 activeElement=activeElement.shadowRoot.activeElement;return activeElement;}
 Document.prototype.deepElementFromPoint=function(x,y)
 {var node=this.elementFromPoint(x,y);while(node&&node.shadowRoot)
 node=node.shadowRoot.elementFromPoint(x,y);return node;}
 function isEnterKey(event)
-{return event.keyCode!==229&&event.keyIdentifier==="Enter";}
+{return event.keyCode!==229&&event.key==="Enter";}
 function isEscKey(event)
 {return event.keyCode===27;}
 function consumeEvent(e)
@@ -715,8 +716,7 @@ function runOnWindowLoad(callback)
 {window.removeEventListener("DOMContentLoaded",windowLoaded,false);callback();}
 if(document.readyState==="complete"||document.readyState==="interactive")
 callback();else
-window.addEventListener("DOMContentLoaded",windowLoaded,false);};(function()
-{function toolboxLoaded()
+window.addEventListener("DOMContentLoaded",windowLoaded,false);};(function(){function toolboxLoaded()
 {if(!window.opener)
 return;var app=window.opener.WebInspector["AdvancedApp"]["_instance"]();app["toolboxLoaded"](document);}
 runOnWindowLoad(toolboxLoaded);})();;applicationDescriptor={"has_html":true,"modules":[{"type":"autostart","name":"platform"},{"type":"autostart","name":"toolbox_bootstrap"}]};Runtime.startApplication("toolbox");
